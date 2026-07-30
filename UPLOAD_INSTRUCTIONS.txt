@@ -1,0 +1,12 @@
+WesGym Update 1
+
+Upload/replace these 3 files in the root of the GitHub repository:
+1. index.html
+2. sw.js
+3. update-v1.js
+
+Important:
+- Replace index.html and sw.js.
+- update-v1.js is a new file.
+- Commit all changes.
+- Then wait 1-2 minutes and reopen the site.
