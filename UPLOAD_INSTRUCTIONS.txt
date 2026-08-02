@@ -1,12 +1,24 @@
-WesGym Update 1
+WesGym Update 2
 
-Upload/replace these 3 files in the root of the GitHub repository:
-1. index.html
-2. sw.js
-3. update-v1.js
+Upload all 4 files to the ROOT of your GitHub repository:
 
-Important:
-- Replace index.html and sw.js.
-- update-v1.js is a new file.
-- Commit all changes.
-- Then wait 1-2 minutes and reopen the site.
+- index.html          (replace old file)
+- sw.js               (replace old file)
+- update-v2.css       (new file)
+- update-v2.js        (new file)
+
+Keep all other existing files unchanged.
+
+After Commit:
+1. Wait 1–2 minutes.
+2. Open https://wesam49.github.io/WesGym/
+3. Refresh Safari. If the old version remains, close the tab and reopen it.
+
+This update adds:
+- Professional day cards instead of an Excel-style table.
+- Date navigation for past and future days.
+- Separate Plan and Actual values.
+- Daily score and color status.
+- Edit/delete custom exercises.
+- Workout history without volume.
+- Visual exercise progress cards in green/red/neutral.
