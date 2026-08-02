@@ -2,10 +2,9 @@
   "name": "WesGym",
   "short_name": "WesGym",
   "start_url": "./",
-  "scope": "./",
   "display": "standalone",
-  "background_color": "#f4f7fb",
-  "theme_color": "#f4f7fb",
+  "background_color": "#f3f6fa",
+  "theme_color": "#f3f6fa",
   "lang": "de",
   "icons": [
     {

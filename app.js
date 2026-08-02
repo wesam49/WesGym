@@ -1,1 +1,319 @@
-const KEY="wesgym_complete_v1";const weekdays=["Sonntag","Montag","Dienstag","Mittwoch","Donnerstag","Freitag","Samstag"];const defaults={settings:{goalCalories:1800,goalProtein:180,goalCarbs:150,goalFat:60,goalSteps:10000,maintenance:2600,goalWeight:82,defaultRest:90,reminderEnabled:true,reminderTime:"08:00"},days:{},plans:[{id:"push",name:"Push",weekday:1,exercises:[{id:"bench",sets:4,reps:8},{id:"incline",sets:3,reps:10},{id:"ohp",sets:3,reps:8},{id:"lateral",sets:3,reps:15},{id:"pushdown",sets:3,reps:12}]},{id:"pull",name:"Pull",weekday:3,exercises:[{id:"lat",sets:4,reps:10},{id:"row",sets:3,reps:10},{id:"face",sets:3,reps:15},{id:"curl",sets:3,reps:10},{id:"hammer",sets:3,reps:12}]},{id:"legs",name:"Beine",weekday:5,exercises:[{id:"squat",sets:4,reps:8},{id:"legpress",sets:3,reps:12},{id:"rdl",sets:3,reps:10},{id:"legcurl",sets:3,reps:12},{id:"calf",sets:4,reps:15}]}],workouts:[],customExercises:[]};let db=load(),library=[...(window.WESGYM_EXERCISES||[]),...db.customExercises],session=null,sessionTick=null,restTick=null,restSeconds=90;const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];document.addEventListener("DOMContentLoaded",()=>{init();renderAll();if("serviceWorker"in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{});checkReminder()});function clone(x){return JSON.parse(JSON.stringify(x))}function load(){try{let x=JSON.parse(localStorage.getItem(KEY));return x?{...clone(defaults),...x,settings:{...defaults.settings,...(x.settings||{})}}:clone(defaults)}catch{return clone(defaults)}}function save(){localStorage.setItem(KEY,JSON.stringify(db))}function key(d=new Date()){return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`}function init(){$$(".bottom button").forEach(b=>b.onclick=()=>openPage(b.dataset.page));$$('[data-diary]').forEach(b=>b.onclick=()=>{toggleTabs('[data-diary]',b);$('#diaryToday').classList.toggle('hidden',b.dataset.diary!=='today');$('#diaryHistory').classList.toggle('hidden',b.dataset.diary!=='history');if(b.dataset.diary==='history')renderHistory()});$$('[data-gym]').forEach(b=>b.onclick=()=>{toggleTabs('[data-gym]',b);$('#gymPlan').classList.toggle('hidden',b.dataset.gym!=='plan');$('#gymSession').classList.toggle('hidden',b.dataset.gym!=='session');$('#gymHistory').classList.toggle('hidden',b.dataset.gym!=='history');if(b.dataset.gym==='history')renderWorkoutHistory()});$('#quickAdd').onclick=()=>{openPage('diary');setTimeout(()=>$('#weight').focus(),100)};$('#dailyForm').onsubmit=saveDay;$('#settingsForm').onsubmit=saveSettings;$('#addPlan').onclick=()=>planModal({id:'p'+Date.now(),name:'Neuer Tag',weekday:1,exercises:[]},true);$('#addExercise').onclick=customExerciseModal;$('#exerciseSearch').oninput=renderExercises;$('#startSession').onclick=startSession;$('#finishSession').onclick=finishSession;$$('[data-rest]').forEach(b=>b.onclick=()=>{restSeconds=+b.dataset.rest;showRest(restSeconds)});$('#startRest').onclick=startRest;$('#exportData').onclick=exportData;$('#importData').onchange=importData;$('#resetData').onclick=()=>{if(confirm('Alle Daten wirklich löschen?')){localStorage.removeItem(KEY);location.reload()}};$('#reminderEnabled').onchange=e=>{db.settings.reminderEnabled=e.target.checked;save()};$('#reminderTime').onchange=e=>{db.settings.reminderTime=e.target.value;save()};$$('[data-close]').forEach(x=>x.onclick=closeModal);window.addEventListener('resize',()=>{renderDashboard();renderReports()})}function toggleTabs(sel,b){$$(sel).forEach(x=>x.classList.toggle('active',x===b))}function openPage(n){$$('.page').forEach(p=>p.classList.toggle('active',p.id===n));$$('.bottom button').forEach(b=>b.classList.toggle('active',b.dataset.page===n));let t={dashboard:'Übersicht',diary:'Tagebuch',gym:'Gym',exercises:'Übungen',reports:'Berichte',settings:'Einstellungen'};$('#pageTitle').textContent=t[n];if(n==='reports')renderReports();if(n==='exercises')renderExercises();if(n==='gym')renderGym()}function n(id){let v=parseFloat($(id).value);return Number.isFinite(v)?v:0}function f(v,d=0){return Number.isFinite(v)?v.toLocaleString('de-DE',{minimumFractionDigits:d,maximumFractionDigits:d}):'–'}function avg(a){return a.length?a.reduce((x,y)=>x+y,0)/a.length:0}function sortedDays(){return Object.values(db.days).sort((a,b)=>a.date.localeCompare(b.date))}function lastDays(c){let a=[];for(let i=c-1;i>=0;i--){let d=new Date();d.setDate(d.getDate()-i);a.push(db.days[key(d)]||{date:key(d)})}return a}function moving(a,w=7){return a.map((x,i)=>{let s=a.slice(Math.max(0,i-w+1),i+1).map(z=>z.weight).filter(Boolean);return s.length?avg(s):null})}function slope(p){if(p.length<2)return 0;let n=p.length,sx=p.reduce((a,b)=>a+b.x,0),sy=p.reduce((a,b)=>a+b.y,0),sxy=p.reduce((a,b)=>a+b.x*b.y,0),sx2=p.reduce((a,b)=>a+b.x*b.x,0),den=n*sx2-sx*sx;return den?(n*sxy-sx*sy)/den:0}function saveDay(e){e.preventDefault();let d=key();db.days[d]={date:d,weight:n('#weight'),bodyFat:n('#bodyFat'),calories:n('#calories'),protein:n('#protein'),carbs:n('#carbs'),fat:n('#fat'),steps:n('#steps')};save();toast('Tagesdaten gespeichert');renderAll()}function saveSettings(e){e.preventDefault();Object.assign(db.settings,{goalCalories:n('#goalCalories'),goalProtein:n('#goalProtein'),goalCarbs:n('#goalCarbs'),goalFat:n('#goalFat'),goalSteps:n('#goalSteps'),maintenance:n('#maintenance'),goalWeight:n('#goalWeight'),defaultRest:n('#defaultRest')});save();toast('Einstellungen gespeichert');renderAll()}function renderAll(){$('#todayLabel').textContent=new Date().toLocaleDateString('de-DE',{weekday:'long',day:'2-digit',month:'long'});renderDay();renderDashboard();renderGym();renderExercises();renderSettings()}function renderDay(){let d=db.days[key()]||{};for(let [id,k]of Object.entries({weight:'weight',bodyFat:'bodyFat',calories:'calories',protein:'protein',carbs:'carbs',fat:'fat',steps:'steps'}))$('#'+id).value=d[k]??'';$('#daySummary').innerHTML=[['Kalorien',f(d.calories||0)+' kcal'],['Protein',f(d.protein||0)+' g'],['Kohlenhydrate',f(d.carbs||0)+' g'],['Fett',f(d.fat||0)+' g'],['Schritte',f(d.steps||0)]].map(x=>`<div><span>${x[0]}</span><b>${x[1]}</b></div>`).join('')}function renderDashboard(){let ds=sortedDays(),ws=ds.filter(x=>x.weight),latest=ws.at(-1),d=db.days[key()]||{},s=db.settings;$('#currentWeight').textContent=latest?f(latest.weight,1):'–';let ma=moving(ws),la=ma.at(-1),pa=ma.length>7?ma.at(-8):null;$('#avg7').textContent=la?f(la,1)+' kg':'–';$('#trend').textContent=la&&pa?`${la-pa<=0?'↓':'↑'} ${f(Math.abs(la-pa),1)} kg / Woche`:'Noch keine Daten';metric('#mCalories',`${f(d.calories||0)} / ${f(s.goalCalories)}`,'#bCalories',(d.calories||0)/s.goalCalories);metric('#mProtein',`${f(d.protein||0)} / ${f(s.goalProtein)} g`,'#bProtein',(d.protein||0)/s.goalProtein);metric('#mSteps',`${f(d.steps||0)} / ${f(s.goalSteps)}`,'#bSteps',(d.steps||0)/s.goalSteps);let p=db.plans.find(x=>x.weekday===new Date().getDay());$('#mWorkout').textContent=p?p.name:'Ruhetag';$('#mWorkoutSub').textContent=p?`${p.exercises.length} Übungen geplant`:'Kein Training geplant';lineChart($('#weightChart'),ma.slice(-30),ws.slice(-30).map(x=>x.date.slice(5)));predictions(ws);let wk=lastDays(7),ww=db.workouts.filter(x=>new Date(x.date)>new Date(Date.now()-7*864e5));$('#wWorkouts').textContent=ww.length;$('#wCalories').textContent=f(avg(wk.map(x=>x.calories).filter(Boolean)));$('#wProtein').textContent=f(avg(wk.map(x=>x.protein).filter(Boolean)));$('#wSteps').textContent=f(avg(wk.map(x=>x.steps).filter(Boolean)))}function metric(t,text,b,r){$(t).textContent=text;$(b).style.width=Math.min(100,Math.max(0,r*100))+'%'}function predictions(ws){let l=ws.at(-1)?.weight;if(!l){$('#realPred').textContent=$('#theoryPred').textContent='–';return}let recent=ws.slice(-14),m=moving(recent),pts=m.map((y,x)=>({x,y})).filter(x=>x.y),real=l+slope(pts)*30,ds=lastDays(14),cal=avg(ds.map(x=>x.calories).filter(Boolean))||db.settings.goalCalories,st=avg(ds.map(x=>x.steps).filter(Boolean))||db.settings.goalSteps,adj=(st-db.settings.goalSteps)*.035,theory=l-((db.settings.maintenance+adj-cal)*30/7700);$('#realPred').textContent=pts.length>=7?f(real,1)+' kg':'–';$('#theoryPred').textContent=f(theory,1)+' kg';$('#predText').textContent=pts.length<7?'Mindestens 7 Gewichtseinträge nötig.':Math.abs(real-theory)>1.5?'Die Modelle unterscheiden sich deutlich. Wasser oder unvollständige Einträge können die Ursache sein.':'Realer Verlauf und Kalorienmodell liegen nah beieinander.'}function renderHistory(){let a=sortedDays().reverse();$('#historyList').innerHTML=a.length?a.map(d=>`<div><div><b>${new Date(d.date+'T12:00').toLocaleDateString('de-DE')}</b><small>${f(d.calories||0)} kcal · ${f(d.protein||0)} g Protein</small></div><div style="text-align:right"><b>${d.weight?f(d.weight,1)+' kg':'–'}</b><small>${f(d.steps||0)} Schritte</small></div></div>`).join(''):'<p class="note">Noch keine Einträge.</p>'}function ex(id){return library.find(x=>x.id===id)||{id,name:'Unbekannt',muscle:'',equipment:'',icon:'🏋️'}}function renderGym(){renderPlans();$('#planSelect').innerHTML=db.plans.map(p=>`<option value="${p.id}">${weekdays[p.weekday]} – ${p.name}</option>`).join('');renderWorkoutHistory()}function renderPlans(){$('#planList').innerHTML=[...db.plans].sort((a,b)=>a.weekday-b.weekday).map(p=>`<div class="planDay"><div class="planHead"><div><small>${weekdays[p.weekday]}</small><h3>${p.name}</h3></div><div><button class="small" data-edit="${p.id}">Bearbeiten</button> <button class="small" data-del="${p.id}">×</button></div></div>${p.exercises.map(x=>`<div class="planEx"><span>${ex(x.id).name}</span><small>${x.sets} × ${x.reps}</small></div>`).join('')}</div>`).join('');$$('[data-edit]').forEach(b=>b.onclick=()=>planModal(clone(db.plans.find(p=>p.id===b.dataset.edit)),false));$$('[data-del]').forEach(b=>b.onclick=()=>{if(confirm('Trainingstag löschen?')){db.plans=db.plans.filter(p=>p.id!==b.dataset.del);save();renderGym()}})}function planModal(p,isNew){openModal(`<h2>${isNew?'Trainingstag hinzufügen':'Trainingstag bearbeiten'}</h2><form id="planForm" class="form"><label class="full">Name<input id="pName" value="${p.name}"></label><label class="full">Wochentag<select id="pDay">${weekdays.map((w,i)=>`<option value="${i}" ${i===p.weekday?'selected':''}>${w}</option>`).join('')}</select></label><div class="full"><b>Übungen</b><div id="pExercises"></div><button type="button" id="pAdd" class="secondary wide">＋ Übung hinzufügen</button></div><button class="primary full">Speichern</button></form>`);let redraw=()=>{$('#pExercises').innerHTML=p.exercises.map((x,i)=>`<div class="planEx"><span>${ex(x.id).name}<small>${x.sets} Sätze × ${x.reps} Wdh.</small></span><button type="button" class="small" data-r="${i}">×</button></div>`).join('');$$('[data-r]').forEach(b=>b.onclick=()=>{p.exercises.splice(+b.dataset.r,1);redraw()})};redraw();$('#pAdd').onclick=()=>picker(id=>{let sets=+prompt('Sätze?','3')||3,reps=+prompt('Wiederholungen?','10')||10;p.exercises.push({id,sets,reps});planModal(p,isNew)});$('#planForm').onsubmit=e=>{e.preventDefault();p.name=$('#pName').value.trim()||'Training';p.weekday=+$('#pDay').value;if(isNew)db.plans.push(p);else db.plans=db.plans.map(x=>x.id===p.id?p:x);save();closeModal();renderGym();toast('Trainingsplan gespeichert')}}function picker(cb){openModal('<h2>Übung auswählen</h2><input id="pickSearch" class="search" placeholder="Suchen"><div id="pickList" class="list"></div>');let draw=()=>{let q=$('#pickSearch').value.toLowerCase();$('#pickList').innerHTML=library.filter(e=>e.name.toLowerCase().includes(q)||e.muscle.toLowerCase().includes(q)).map(e=>`<div><div><b>${e.name}</b><small>${e.muscle}</small></div><button class="small" data-pick="${e.id}">＋</button></div>`).join('');$$('[data-pick]').forEach(b=>b.onclick=()=>cb(b.dataset.pick))};draw();$('#pickSearch').oninput=draw}function startSession(){let p=db.plans.find(x=>x.id===$('#planSelect').value);if(!p)return;session={id:'w'+Date.now(),name:p.name,date:new Date().toISOString(),started:Date.now(),exercises:p.exercises.map(x=>({id:x.id,sets:Array.from({length:x.sets},()=>({weight:0,reps:x.reps,done:false}))}))};$('#sessionSetup').classList.add('hidden');$('#activeSession').classList.remove('hidden');$('#sessionName').textContent=p.name;renderSession();sessionTick=setInterval(updateSessionTime,1000);updateSessionTime()}function lastPerf(id){for(let w of [...db.workouts].reverse()){let e=w.exercises.find(x=>x.id===id);if(e)return e}return null}function renderSession(){$('#sessionExercises').innerHTML=session.exercises.map((e,ei)=>{let meta=ex(e.id),prev=lastPerf(e.id),prevText=prev?'Letztes Mal: '+prev.sets.map(s=>`${s.weight} kg × ${s.reps}`).join(' · '):'Noch keine vorherige Leistung',suggest=prev&&Math.max(...prev.sets.map(s=>s.weight||0))?`Vorschlag: ${f(Math.max(...prev.sets.map(s=>s.weight||0))+2.5,1)} kg testen, wenn die Technik sauber war.`:'Wähle ein Gewicht mit 1–2 Wiederholungen Reserve.';return `<div class="card"><h3>${meta.name}</h3><p class="note">${prevText}</p>${e.sets.map((s,si)=>`<div class="setRow"><b>${si+1}</b><input data-w="${ei}-${si}" type="number" step="0.5" placeholder="kg"><input data-rp="${ei}-${si}" type="number" value="${s.reps}" placeholder="Wdh."><button data-done="${ei}-${si}" class="doneBtn">✓</button></div>`).join('')}<p class="note">${suggest}</p></div>`}).join('');$$('[data-w]').forEach(i=>i.onchange=()=>{let[a,b]=i.dataset.w.split('-').map(Number);session.exercises[a].sets[b].weight=+i.value||0});$$('[data-rp]').forEach(i=>i.onchange=()=>{let[a,b]=i.dataset.rp.split('-').map(Number);session.exercises[a].sets[b].reps=+i.value||0});$$('[data-done]').forEach(b=>b.onclick=()=>{let[a,c]=b.dataset.done.split('-').map(Number);session.exercises[a].sets[c].done=!session.exercises[a].sets[c].done;b.classList.toggle('done');startRest()})}function updateSessionTime(){let s=Math.floor((Date.now()-session.started)/1000);$('#sessionTime').textContent=`${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`}function showRest(s){$('#restTime').textContent=`${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`}function startRest(){clearInterval(restTick);let l=restSeconds||db.settings.defaultRest;showRest(l);restTick=setInterval(()=>{showRest(--l);if(l<=0){clearInterval(restTick);navigator.vibrate?.([200,100,200]);toast('Pause beendet')}},1000)}function finishSession(){if(!session||!confirm('Training abschließen?'))return;clearInterval(sessionTick);clearInterval(restTick);session.finished=Date.now();session.duration=Math.round((session.finished-session.started)/1000);session.volume=session.exercises.reduce((a,e)=>a+e.sets.reduce((s,x)=>s+(x.done?x.weight*x.reps:0),0),0);db.workouts.push(session);save();session=null;$('#activeSession').classList.add('hidden');$('#sessionSetup').classList.remove('hidden');renderAll();toast('Training gespeichert')}function renderWorkoutHistory(){$('#workoutHistory').innerHTML=db.workouts.length?[...db.workouts].reverse().map(w=>`<div><div><b>${w.name}</b><small>${new Date(w.date).toLocaleDateString('de-DE')} · ${Math.round((w.duration||0)/60)} Min.</small></div><div style="text-align:right"><b>${f(w.volume||0)} kg</b><small>Volumen</small></div></div>`).join(''):'<p class="note">Noch keine Trainings.</p>'}function renderExercises(){let q=($('#exerciseSearch')?.value||'').toLowerCase(),current=$('#filters .active')?.dataset.muscle||'Alle',muscles=['Alle',...new Set(library.map(e=>e.muscle))];$('#filters').innerHTML=muscles.map(m=>`<button class="filter ${m===current?'active':''}" data-muscle="${m}">${m}</button>`).join('');$$('[data-muscle]').forEach(b=>b.onclick=()=>{$$('[data-muscle]').forEach(x=>x.classList.remove('active'));b.classList.add('active');renderExercises()});$('#exerciseGrid').innerHTML=library.filter(e=>(current==='Alle'||e.muscle===current)&&(e.name.toLowerCase().includes(q)||e.muscle.toLowerCase().includes(q)||e.equipment.toLowerCase().includes(q))).map(e=>`<div class="exerciseCard"><div class="exerciseVisual">${e.icon||'🏋️'}</div><div class="exerciseBody"><h3>${e.name}</h3><p>${e.muscle} · ${e.equipment}</p></div></div>`).join('')}function customExerciseModal(){openModal('<h2>Eigene Übung</h2><form id="ceForm" class="form"><label class="full">Name<input id="ceName" required></label><label>Muskelgruppe<input id="ceMuscle" required></label><label>Gerät<input id="ceEquipment" required></label><label class="full">Symbol<input id="ceIcon" value="🏋️"></label><button class="primary full">Speichern</button></form>');$('#ceForm').onsubmit=e=>{e.preventDefault();let x={id:'c'+Date.now(),name:$('#ceName').value,muscle:$('#ceMuscle').value,equipment:$('#ceEquipment').value,icon:$('#ceIcon').value||'🏋️'};db.customExercises.push(x);library.push(x);save();closeModal();renderExercises();toast('Übung hinzugefügt')}}function renderReports(){let ds=lastDays(14),ws=db.workouts.slice(-10);lineChart($('#nutritionChart'),ds.map(x=>x.calories||0),ds.map(x=>x.date.slice(5)));barChart($('#volumeChart'),ws.map(x=>x.volume||0),ws.map(x=>new Date(x.date).toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit'})));let wk=lastDays(7),k=avg(wk.map(x=>x.calories).filter(Boolean)),p=avg(wk.map(x=>x.protein).filter(Boolean)),st=avg(wk.map(x=>x.steps).filter(Boolean)),tw=db.workouts.filter(x=>new Date(x.date)>new Date(Date.now()-7*864e5));$('#weeklyReport').innerHTML=`<div class="reportBox"><b>${tw.length} Trainingseinheiten</b><br>${f(tw.reduce((a,w)=>a+(w.volume||0),0))} kg Trainingsvolumen.</div><div class="reportBox"><b>Ø ${f(k)} kcal und ${f(p)} g Protein</b><br>${k<=db.settings.goalCalories?'Kalorienziel im Durchschnitt eingehalten.':'Kalorien lagen über dem Ziel.'}</div><div class="reportBox"><b>Ø ${f(st)} Schritte</b><br>${st>=db.settings.goalSteps?'Schrittziel erreicht.':'Im Durchschnitt fehlen '+f(db.settings.goalSteps-st)+' Schritte.'}</div>`;renderPR()}function renderPR(){let best={};db.workouts.forEach(w=>w.exercises.forEach(e=>e.sets.forEach(s=>{if(!s.done)return;let score=(s.weight||0)*(1+(s.reps||0)/30);if(!best[e.id]||score>best[e.id].score)best[e.id]={...s,score,date:w.date}})));let a=Object.entries(best).sort((x,y)=>y[1].score-x[1].score);$('#prList').innerHTML=a.length?a.map(([id,p])=>`<div><div><b>${ex(id).name}</b><small>${new Date(p.date).toLocaleDateString('de-DE')}</small></div><div style="text-align:right"><b>${f(p.weight,1)} kg × ${p.reps}</b><small>Bestleistung</small></div></div>`).join(''):'<p class="note">Noch keine Rekorde.</p>'}function renderSettings(){let s=db.settings;for(let [id,k]of Object.entries({goalCalories:'goalCalories',goalProtein:'goalProtein',goalCarbs:'goalCarbs',goalFat:'goalFat',goalSteps:'goalSteps',maintenance:'maintenance',goalWeight:'goalWeight',defaultRest:'defaultRest'}))$('#'+id).value=s[k];$('#reminderEnabled').checked=s.reminderEnabled;$('#reminderTime').value=s.reminderTime;restSeconds=s.defaultRest;showRest(restSeconds)}function exportData(){let b=new Blob([JSON.stringify(db,null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=`WesGym-Backup-${key()}.json`;a.click();URL.revokeObjectURL(a.href)}function importData(e){let f=e.target.files[0];if(!f)return;let r=new FileReader();r.onload=()=>{try{db=JSON.parse(r.result);save();location.reload()}catch{toast('Ungültige Datei')}};r.readAsText(f)}function checkReminder(){if(!db.settings.reminderEnabled)return;let now=new Date(),[h,m]=(db.settings.reminderTime||'08:00').split(':').map(Number);if(now.getHours()>h||(now.getHours()===h&&now.getMinutes()>=m))if(!db.days[key()]?.weight)setTimeout(()=>toast('Guten Morgen – bitte Gewicht eintragen.'),700)}function openModal(h){$('#modalBody').innerHTML=h;$('#modal').classList.remove('hidden')}function closeModal(){$('#modal').classList.add('hidden')}function toast(t){let x=$('#toast');x.textContent=t;x.classList.remove('hidden');clearTimeout(x._t);x._t=setTimeout(()=>x.classList.add('hidden'),2500)}function lineChart(c,v,l){if(!c)return;let r=c.getBoundingClientRect(),d=devicePixelRatio||1,w=Math.max(320,r.width),h=180;c.width=w*d;c.height=h*d;let x=c.getContext('2d');x.scale(d,d);x.clearRect(0,0,w,h);if(!v.length){x.fillStyle='#98a2b3';x.fillText('Noch keine Daten',12,28);return}let nums=v.filter(Number.isFinite);if(!nums.length)return;let min=Math.min(...nums),max=Math.max(...nums);if(min===max){min--;max++}let p={l:34,r:12,t:16,b:28},xp=i=>p.l+i/Math.max(1,v.length-1)*(w-p.l-p.r),yp=y=>p.t+(max-y)/(max-min)*(h-p.t-p.b);x.strokeStyle='#e5e7eb';for(let i=0;i<4;i++){let yy=p.t+i*(h-p.t-p.b)/3;x.beginPath();x.moveTo(p.l,yy);x.lineTo(w-p.r,yy);x.stroke()}x.strokeStyle='#0a84ff';x.lineWidth=3;x.beginPath();v.forEach((y,i)=>{if(!Number.isFinite(y))return;i?x.lineTo(xp(i),yp(y)):x.moveTo(xp(i),yp(y))});x.stroke();x.fillStyle='#0a84ff';v.forEach((y,i)=>{if(!Number.isFinite(y))return;x.beginPath();x.arc(xp(i),yp(y),3.5,0,Math.PI*2);x.fill()});x.fillStyle='#98a2b3';x.font='10px -apple-system';x.textAlign='center';let step=Math.max(1,Math.ceil(l.length/5));l.forEach((z,i)=>{if(i%step===0||i===l.length-1)x.fillText(z,xp(i),h-8)})}function barChart(c,v,l){if(!c)return;let r=c.getBoundingClientRect(),d=devicePixelRatio||1,w=Math.max(320,r.width),h=190;c.width=w*d;c.height=h*d;let x=c.getContext('2d');x.scale(d,d);x.clearRect(0,0,w,h);if(!v.length){x.fillStyle='#98a2b3';x.fillText('Noch keine Daten',12,28);return}let p={l:28,r:10,t:15,b:28},max=Math.max(1,...v),bw=(w-p.l-p.r)/v.length*.62;v.forEach((z,i)=>{let xx=p.l+(i+.19)*(w-p.l-p.r)/v.length,bh=z/max*(h-p.t-p.b);x.fillStyle='#0a84ff';x.beginPath();x.roundRect(xx,h-p.b-bh,bw,bh,5);x.fill()});x.fillStyle='#98a2b3';x.font='10px -apple-system';x.textAlign='center';l.forEach((z,i)=>{if(i%Math.max(1,Math.ceil(l.length/6))===0)x.fillText(z,p.l+(i+.5)*(w-p.l-p.r)/v.length,h-8)})}
+
+const STORAGE_KEY='wesgym_1_0';
+const weekdays=['Sonntag','Montag','Dienstag','Mittwoch','Donnerstag','Freitag','Samstag'];
+const defaultDB={
+  weightPlan:{startDate:'',startWeight:null,maintenanceCalories:2600,plannedCalories:1800,goalWeight:null},
+  goals:{protein:180,carbs:150,fat:60,steps:10000,defaultRest:90},
+  actualDays:{},
+  dayPlans:{},
+  plans:[],
+  exercises:[],
+  workouts:[]
+};
+let db=loadDB(), selectedDate=new Date(), selectedMode='actual', session=null, sessionTimer=null, restTimer=null, selectedRest=90;
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+
+document.addEventListener('DOMContentLoaded',()=>{
+  initNavigation();initTabs();initActions();renderAll();
+  if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
+});
+
+function clone(v){return JSON.parse(JSON.stringify(v))}
+function loadDB(){try{const x=JSON.parse(localStorage.getItem(STORAGE_KEY));return x?{...clone(defaultDB),...x,weightPlan:{...defaultDB.weightPlan,...(x.weightPlan||{})},goals:{...defaultDB.goals,...(x.goals||{})}}:clone(defaultDB)}catch{return clone(defaultDB)}}
+function saveDB(){localStorage.setItem(STORAGE_KEY,JSON.stringify(db))}
+function dateKey(d=new Date()){return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
+function parseDate(k){const [y,m,d]=k.split('-').map(Number);return new Date(y,m-1,d,12)}
+function fmt(v,d=0){return Number.isFinite(+v)?(+v).toLocaleString('de-DE',{minimumFractionDigits:d,maximumFractionDigits:d}):'–'}
+function avg(a){return a.length?a.reduce((x,y)=>x+y,0)/a.length:null}
+function esc(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]))}
+function num(id){const v=parseFloat($(id).value);return Number.isFinite(v)?v:null}
+function toast(msg){const t=$('#toast');t.textContent=msg;t.classList.remove('hidden');clearTimeout(t._x);t._x=setTimeout(()=>t.classList.add('hidden'),2200)}
+function openModal(html){$('#modalBody').innerHTML=html;$('#modal').classList.remove('hidden')}
+function closeModal(){$('#modal').classList.add('hidden')}
+
+function initNavigation(){
+  $$('.bottom-nav button').forEach(b=>b.onclick=()=>openPage(b.dataset.page));
+}
+function openPage(name){
+  $$('.page').forEach(p=>p.classList.toggle('active',p.id===name));
+  $$('.bottom-nav button').forEach(b=>b.classList.toggle('active',b.dataset.page===name));
+  const titles={dashboard:'Übersicht',diary:'Tagebuch',gym:'Gym',exercises:'Übungen',reports:'Fortschritt',settings:'Einstellungen'};
+  $('#pageTitle').textContent=titles[name];
+  if(name==='dashboard')renderDashboard();
+  if(name==='diary')renderDayScreen();
+  if(name==='gym')renderGym();
+  if(name==='exercises')renderExercises();
+  if(name==='reports')renderProgress();
+  if(name==='settings')renderSettings();
+}
+function initTabs(){
+  $$('[data-gym-tab]').forEach(b=>b.onclick=()=>{
+    $$('[data-gym-tab]').forEach(x=>x.classList.toggle('active',x===b));
+    $('#gymPlan').classList.toggle('hidden',b.dataset.gymTab!=='plan');
+    $('#gymSession').classList.toggle('hidden',b.dataset.gymTab!=='session');
+    $('#gymHistory').classList.toggle('hidden',b.dataset.gymTab!=='history');
+    if(b.dataset.gymTab==='history')renderWorkoutHistory();
+  });
+}
+function initActions(){
+  $('#quickAdd').onclick=()=>{selectedDate=new Date();selectedMode='actual';openPage('diary')};
+  $('#openToday').onclick=()=>{selectedDate=new Date();selectedMode='actual';openPage('diary')};
+  $('#addPlanDay').onclick=()=>editPlan({id:'p'+Date.now(),name:'Neuer Tag',weekday:1,exercises:[]},true);
+  $('#addExercise').onclick=()=>exerciseModal(null);
+  $('#exerciseSearch').oninput=renderExercises;
+  $('#startSession').onclick=startSession;
+  $('#finishSession').onclick=finishSession;
+  $('#cancelSession').onclick=cancelSession;
+  $$('[data-rest]').forEach(b=>b.onclick=()=>{selectedRest=+b.dataset.rest;showRest(selectedRest)});
+  $('#startRest').onclick=startRest;
+  $('#weightPlanForm').onsubmit=saveWeightPlan;
+  $('#dailyGoalsForm').onsubmit=saveGoals;
+  $('#exportData').onclick=exportData;
+  $('#importData').onchange=importData;
+  $('#resetData').onclick=()=>{if(confirm('Alle Daten wirklich löschen?')){localStorage.removeItem(STORAGE_KEY);location.reload()}};
+  $$('[data-close-modal]').forEach(x=>x.onclick=closeModal);
+}
+function renderAll(){
+  $('#todayLabel').textContent=new Date().toLocaleDateString('de-DE',{weekday:'long',day:'2-digit',month:'long'});
+  renderDashboard();renderDayScreen();renderGym();renderExercises();renderProgress();renderSettings();
+}
+
+function expectedWeight(k){
+  const p=db.weightPlan;
+  if(!p.startDate||!Number.isFinite(+p.startWeight)||!Number.isFinite(+p.maintenanceCalories)||!Number.isFinite(+p.plannedCalories))return null;
+  const days=Math.floor((parseDate(k)-parseDate(p.startDate))/86400000);
+  if(days<0)return null;
+  return +p.startWeight-((+p.maintenanceCalories-(+p.plannedCalories))*days/7700);
+}
+function actualDay(k){return db.actualDays[k]||{date:k}}
+function planDay(k){
+  return {...{date:k,calories:db.weightPlan.plannedCalories,protein:db.goals.protein,carbs:db.goals.carbs,fat:db.goals.fat,steps:db.goals.steps,gym:false,workoutName:''},...(db.dayPlans[k]||{}),weight:expectedWeight(k)};
+}
+function classify(metric,a,p){
+  if(!Number.isFinite(+a)||!Number.isFinite(+p))return'neutral';
+  a=+a;p=+p;
+  if(metric==='weight'){const d=a-p;if(Math.abs(d)<=.15)return'mid';return d<0?'good':'bad'}
+  if(metric==='calories'){const r=a/p;if(r>=.85&&r<=1.05)return'good';if(r>=.7&&r<=1.15)return'mid';return'bad'}
+  if(metric==='protein'||metric==='steps'){const r=a/p;if(r>=1)return'good';if(r>=.85)return'mid';return'bad'}
+  return'neutral';
+}
+function scoreFor(k){
+  const p=planDay(k),a=actualDay(k),values=[];
+  for(const m of ['weight','calories','protein','steps']){const c=classify(m,a[m],p[m]);if(c!=='neutral')values.push(c)}
+  if(p.gym){values.push(db.workouts.some(w=>dateKey(new Date(w.date))===k)?'good':'bad')}
+  if(!values.length)return null;
+  const pts={good:100,mid:70,bad:25};return Math.round(values.reduce((s,x)=>s+pts[x],0)/values.length);
+}
+function scoreClass(s){return s===null?'neutral':s>=85?'good':s>=60?'mid':'bad'}
+function metricCard(label,a,p,metric,suffix=''){
+  const c=classify(metric,a,p),icon=c==='good'?'↑':c==='bad'?'↓':'•';
+  return `<div class="metric-card ${c}"><span class="state">${icon}</span><div class="label">${label}</div><div class="value">${Number.isFinite(+a)?fmt(a,metric==='weight'?1:0):'–'}${suffix}</div><div class="sub">Plan ${Number.isFinite(+p)?fmt(p,metric==='weight'?1:0):'–'}${suffix}</div></div>`;
+}
+function statusText(k){
+  const a=actualDay(k).weight,p=expectedWeight(k);
+  if(!Number.isFinite(+a)||!Number.isFinite(+p))return'Noch keine Gewichtsdaten';
+  const d=+a-+p;if(Math.abs(d)<=.15)return'Im Plan';return d<0?`${fmt(Math.abs(d),1)} kg vor dem Plan`:`${fmt(d,1)} kg hinter dem Plan`;
+}
+function sevenDayStatus(k){
+  const end=parseDate(k),actual=[],planned=[];
+  for(let i=6;i>=0;i--){const d=new Date(end);d.setDate(d.getDate()-i);const dk=dateKey(d),a=actualDay(dk).weight,p=expectedWeight(dk);if(Number.isFinite(+a))actual.push(+a);if(Number.isFinite(+p))planned.push(+p)}
+  if(actual.length<3||!planned.length)return'7-Tage-Trend noch nicht verfügbar';
+  const d=avg(actual)-avg(planned);if(Math.abs(d)<=.15)return'7-Tage-Trend: im Plan';return d<0?`7-Tage-Trend: ${fmt(Math.abs(d),1)} kg vor dem Plan`:`7-Tage-Trend: ${fmt(d,1)} kg hinter dem Plan`;
+}
+function renderDashboard(){
+  const k=dateKey(),a=actualDay(k),p=planDay(k),score=scoreFor(k),workout=db.workouts.some(w=>dateKey(new Date(w.date))===k);
+  $('#dashboardToday').innerHTML=`<section class="day-hero">
+    <div class="hero-top"><div><p>${new Date().toLocaleDateString('de-DE',{weekday:'long',day:'2-digit',month:'long'})}</p><h2>Heute</h2></div>
+    <div class="score-ring" style="--score:${score??0}%"><div><b>${score??'–'}${score!==null?'%':''}</b><small>Tages-Score</small></div></div></div>
+    <div class="metric-grid">
+      ${metricCard('Gewicht',a.weight,p.weight,'weight',' kg')}
+      ${metricCard('Kalorien',a.calories,p.calories,'calories')}
+      ${metricCard('Protein',a.protein,p.protein,'protein',' g')}
+      ${metricCard('Schritte',a.steps,p.steps,'steps')}
+      <div class="metric-card ${p.gym?(workout?'good':'bad'):'neutral'}"><span class="state">${p.gym?(workout?'✓':'!'):'•'}</span><div class="label">Training</div><div class="value">${workout?'Erledigt':p.gym?'Geplant':'Ruhetag'}</div><div class="sub">${esc(p.workoutName)}</div></div>
+      <div class="metric-card ${scoreClass(score)}"><div class="label">Gewichtsstatus</div><div class="value">${statusText(k)}</div><div class="sub">${sevenDayStatus(k)}</div></div>
+    </div></section>`;
+  const row=$('#dashboardDays');row.innerHTML='';
+  for(let i=-3;i<=3;i++){const d=new Date();d.setDate(d.getDate()+i);const dk=dateKey(d),s=scoreFor(dk),card=document.createElement('button');card.className=`mini-day ${scoreClass(s)}`;card.innerHTML=`<span>${d.toLocaleDateString('de-DE',{weekday:'short',day:'2-digit',month:'2-digit'})}</span><strong>${s??'–'}${s!==null?'%':''}</strong><b>${Number.isFinite(+actualDay(dk).weight)?fmt(actualDay(dk).weight,1)+' kg':'Keine Daten'}</b>`;card.onclick=()=>{selectedDate=d;openPage('diary')};row.appendChild(card)}
+  renderPredictions();
+}
+function renderPredictions(){
+  const p=db.weightPlan,latest=Object.values(db.actualDays).filter(d=>Number.isFinite(+d.weight)).sort((a,b)=>a.date.localeCompare(b.date)).at(-1);
+  const base=latest?.weight??p.startWeight,start=latest?.date??p.startDate;
+  if(!Number.isFinite(+base)||!start){$('#pred7').textContent=$('#pred30').textContent=$('#pred90').textContent='–';$('#predictionText').textContent='Gewichtsplan zuerst einrichten.';return}
+  const deficit=(+p.maintenanceCalories||0)-(+p.plannedCalories||0);
+  const predict=days=>+base-(deficit*days/7700);
+  $('#pred7').textContent=fmt(predict(7),1)+' kg';$('#pred30').textContent=fmt(predict(30),1)+' kg';$('#pred90').textContent=fmt(predict(90),1)+' kg';
+  $('#predictionText').textContent=`Basis: ${fmt(base,1)} kg · tägliches Defizit ${fmt(deficit)} kcal · theoretisch ${fmt(deficit*7/7700,2)} kg pro Woche.`;
+}
+
+function renderDayScreen(){
+  const host=$('#dayScreen');if(!host)return;const k=dateKey(selectedDate),p=planDay(k),a=actualDay(k),score=scoreFor(k);
+  host.innerHTML=`<section class="day-nav-card">
+    <div class="day-nav-head"><button id="prevDay">‹</button><div class="day-date"><b>${selectedDate.toLocaleDateString('de-DE',{weekday:'long',day:'2-digit',month:'long'})}</b><span>${k===dateKey()?'Heute':parseDate(k)>parseDate(dateKey())?'Geplant':'Vergangener Tag'}</span></div><button id="nextDay">›</button></div>
+    <div id="dayStrip" class="day-strip"></div></section>
+    <div class="mode-toggle"><button data-mode="plan" class="${selectedMode==='plan'?'active':''}">Geplant</button><button data-mode="actual" class="${selectedMode==='actual'?'active':''}">Tatsächlich</button></div>
+    <section class="day-hero">
+      <div class="hero-top"><div><p>${selectedMode==='plan'?'Dein Tagesplan':'Plan gegen tatsächliche Werte'}</p><h2>${selectedMode==='plan'?'Geplant':'Tagesergebnis'}</h2></div>
+      <div class="score-ring" style="--score:${score??0}%"><div><b>${score??'–'}${score!==null?'%':''}</b><small>Score</small></div></div></div>
+      <div class="metric-grid">
+        ${metricCard('Gewicht',selectedMode==='plan'?p.weight:a.weight,p.weight,'weight',' kg')}
+        ${metricCard('Kalorien',selectedMode==='plan'?p.calories:a.calories,p.calories,'calories')}
+        ${metricCard('Protein',selectedMode==='plan'?p.protein:a.protein,p.protein,'protein',' g')}
+        ${metricCard('Schritte',selectedMode==='plan'?p.steps:a.steps,p.steps,'steps')}
+      </div>
+    </section>
+    <section class="editor-card">
+      <div class="section-head"><div><h2>${selectedMode==='plan'?'Plan bearbeiten':'Tatsächliche Werte'}</h2><p>${selectedMode==='plan'?'Gewicht wird automatisch berechnet':'Vergangene Tage können korrigiert werden'}</p></div></div>
+      <form id="dayForm" class="form-grid">
+        <label>Gewicht (kg)<input id="dWeight" type="number" step="0.1" value="${selectedMode==='plan'?(Number.isFinite(+p.weight)?p.weight.toFixed(2):''):(a.weight??'')}" ${selectedMode==='plan'?'disabled':''}></label>
+        <label>Kalorien<input id="dCalories" type="number" value="${selectedMode==='plan'?(p.calories??''):(a.calories??'')}"></label>
+        <label>Protein (g)<input id="dProtein" type="number" value="${selectedMode==='plan'?(p.protein??''):(a.protein??'')}"></label>
+        <label>Kohlenhydrate (g)<input id="dCarbs" type="number" value="${selectedMode==='plan'?(p.carbs??''):(a.carbs??'')}"></label>
+        <label>Fett (g)<input id="dFat" type="number" value="${selectedMode==='plan'?(p.fat??''):(a.fat??'')}"></label>
+        <label>Schritte<input id="dSteps" type="number" value="${selectedMode==='plan'?(p.steps??''):(a.steps??'')}"></label>
+        ${selectedMode==='plan'?`<label class="full">Training geplant<select id="dGym"><option value="0" ${!p.gym?'selected':''}>Nein</option><option value="1" ${p.gym?'selected':''}>Ja</option></select></label><label class="full">Trainingstag / Notiz<input id="dWorkoutName" value="${esc(p.workoutName)}"></label>`:''}
+        <button class="primary full">Speichern</button>
+        <button id="deleteDay" type="button" class="outline-danger full">Daten dieses Tages löschen</button>
+      </form>
+      <div class="summary-box"><b>${statusText(k)}</b><br>${sevenDayStatus(k)}</div>
+    </section>`;
+  $('#prevDay').onclick=()=>{selectedDate.setDate(selectedDate.getDate()-1);renderDayScreen()};
+  $('#nextDay').onclick=()=>{selectedDate.setDate(selectedDate.getDate()+1);renderDayScreen()};
+  $$('[data-mode]').forEach(b=>b.onclick=()=>{selectedMode=b.dataset.mode;renderDayScreen()});
+  $('#dayForm').onsubmit=saveDay;
+  $('#deleteDay').onclick=deleteDay;
+  renderDayStrip();
+}
+function renderDayStrip(){
+  const strip=$('#dayStrip');strip.innerHTML='';
+  for(let i=-3;i<=3;i++){const d=new Date(selectedDate);d.setDate(d.getDate()+i);const k=dateKey(d),s=scoreFor(k),b=document.createElement('button');b.className=`day-chip ${i===0?'selected':''} ${scoreClass(s)}`;b.innerHTML=`<span>${d.toLocaleDateString('de-DE',{weekday:'short'})}</span><b>${d.getDate()}</b><small>${s===null?'–':s+'%'}</small>`;b.onclick=()=>{selectedDate=d;renderDayScreen()};strip.appendChild(b)}
+}
+function saveDay(e){
+  e.preventDefault();const k=dateKey(selectedDate),payload={date:k,calories:num('#dCalories'),protein:num('#dProtein'),carbs:num('#dCarbs'),fat:num('#dFat'),steps:num('#dSteps')};
+  if(selectedMode==='plan'){db.dayPlans[k]={...db.dayPlans[k],...payload,gym:$('#dGym').value==='1',workoutName:$('#dWorkoutName').value.trim()}}
+  else{db.actualDays[k]={...db.actualDays[k],...payload,weight:num('#dWeight')}}
+  saveDB();toast('Tag gespeichert');renderDayScreen();renderDashboard();
+}
+function deleteDay(){
+  if(!confirm('Daten dieses Tages wirklich löschen?'))return;const k=dateKey(selectedDate);if(selectedMode==='plan')delete db.dayPlans[k];else delete db.actualDays[k];saveDB();renderDayScreen();renderDashboard();toast('Tagesdaten gelöscht');
+}
+
+function ex(id){return db.exercises.find(e=>e.id===id)||{id,name:'Unbekannte Übung',muscle:'',equipment:'',icon:'🏋️'}}
+function renderExercises(){
+  const q=($('#exerciseSearch').value||'').toLowerCase(),filtered=db.exercises.filter(e=>e.name.toLowerCase().includes(q)||e.muscle.toLowerCase().includes(q)||e.equipment.toLowerCase().includes(q));
+  $('#exerciseGrid').innerHTML=filtered.length?filtered.map(e=>`<div class="exercise-card"><div class="exercise-icon">${esc(e.icon||'🏋️')}</div><div class="exercise-body"><h3>${esc(e.name)}</h3><p>${esc(e.muscle)} · ${esc(e.equipment)}</p><div class="exercise-actions"><button class="edit-btn" data-edit-ex="${e.id}">Bearbeiten</button><button class="delete-btn" data-delete-ex="${e.id}">Löschen</button></div></div></div>`).join(''):'<p class="note">Noch keine Übungen. Füge deine erste eigene Übung hinzu.</p>';
+  $$('[data-edit-ex]').forEach(b=>b.onclick=()=>exerciseModal(b.dataset.editEx));
+  $$('[data-delete-ex]').forEach(b=>b.onclick=()=>deleteExercise(b.dataset.deleteEx));
+}
+function exerciseModal(id){
+  const x=id?clone(ex(id)):{id:'e'+Date.now(),name:'',muscle:'',equipment:'',icon:'🏋️'};
+  openModal(`<h2>${id?'Übung bearbeiten':'Neue Übung'}</h2><form id="exerciseForm" class="form-grid">
+    <label class="full">Name<input id="exName" value="${esc(x.name)}" required></label>
+    <label>Muskelgruppe<input id="exMuscle" value="${esc(x.muscle)}" required></label>
+    <label>Gerät<input id="exEquipment" value="${esc(x.equipment)}" required></label>
+    <label class="full">Symbol<input id="exIcon" value="${esc(x.icon)}"></label>
+    <button class="primary full">Speichern</button></form>`);
+  $('#exerciseForm').onsubmit=e=>{e.preventDefault();Object.assign(x,{name:$('#exName').value.trim(),muscle:$('#exMuscle').value.trim(),equipment:$('#exEquipment').value.trim(),icon:$('#exIcon').value||'🏋️'});db.exercises=id?db.exercises.map(y=>y.id===id?x:y):[...db.exercises,x];saveDB();closeModal();renderExercises();renderGym();toast('Übung gespeichert')};
+}
+function deleteExercise(id){
+  const used=db.plans.some(p=>p.exercises.some(e=>e.id===id));
+  if(!confirm(used?'Übung wird in einem Plan verwendet. Aus Bibliothek und allen Plänen löschen?':'Übung wirklich löschen?'))return;
+  db.exercises=db.exercises.filter(e=>e.id!==id);db.plans=db.plans.map(p=>({...p,exercises:p.exercises.filter(e=>e.id!==id)}));saveDB();renderExercises();renderGym();toast('Übung gelöscht');
+}
+
+function renderGym(){
+  renderPlans();renderSessionSelect();renderWorkoutHistory();
+}
+function renderPlans(){
+  $('#planList').innerHTML=db.plans.length?[...db.plans].sort((a,b)=>a.weekday-b.weekday).map(p=>`<div class="plan-day"><div class="plan-head"><div><small>${weekdays[p.weekday]}</small><h3>${esc(p.name)}</h3></div><div><button class="small-btn" data-edit-plan="${p.id}">Bearbeiten</button> <button class="small-btn" data-delete-plan="${p.id}">×</button></div></div>${p.exercises.map(x=>`<div class="plan-ex"><span>${esc(ex(x.id).name)}</span><small>${x.sets} × ${x.reps}</small></div>`).join('')}</div>`).join(''):'<p class="note">Noch keine Trainingstage. Tippe auf „＋ Tag“.</p>';
+  $$('[data-edit-plan]').forEach(b=>b.onclick=()=>editPlan(clone(db.plans.find(p=>p.id===b.dataset.editPlan)),false));
+  $$('[data-delete-plan]').forEach(b=>b.onclick=()=>{if(confirm('Trainingstag löschen?')){db.plans=db.plans.filter(p=>p.id!==b.dataset.deletePlan);saveDB();renderGym()}});
+}
+function editPlan(p,isNew){
+  openModal(`<h2>${isNew?'Trainingstag hinzufügen':'Trainingstag bearbeiten'}</h2><form id="planForm" class="form-grid">
+    <label class="full">Name<input id="planName" value="${esc(p.name)}"></label>
+    <label class="full">Wochentag<select id="planWeekday">${weekdays.map((w,i)=>`<option value="${i}" ${i===p.weekday?'selected':''}>${w}</option>`).join('')}</select></label>
+    <div class="full"><b>Übungen</b><div id="planExercises"></div><button type="button" id="addExerciseToPlan" class="secondary wide">＋ Übung hinzufügen</button></div>
+    <button class="primary full">Speichern</button></form>`);
+  const redraw=()=>{$('#planExercises').innerHTML=p.exercises.map((x,i)=>`<div class="plan-ex"><span>${esc(ex(x.id).name)}<small>${x.sets} Sätze × ${x.reps} Wdh.</small></span><button type="button" class="small-btn" data-remove-plan-ex="${i}">×</button></div>`).join('');$$('[data-remove-plan-ex]').forEach(b=>b.onclick=()=>{p.exercises.splice(+b.dataset.removePlanEx,1);redraw()})};redraw();
+  $('#addExerciseToPlan').onclick=()=>pickExercise(id=>{const sets=+prompt('Sätze?','3')||3,reps=+prompt('Wiederholungen?','10')||10;p.exercises.push({id,sets,reps});editPlan(p,isNew)});
+  $('#planForm').onsubmit=e=>{e.preventDefault();p.name=$('#planName').value.trim()||'Training';p.weekday=+$('#planWeekday').value;if(isNew)db.plans.push(p);else db.plans=db.plans.map(x=>x.id===p.id?p:x);saveDB();closeModal();renderGym();toast('Trainingsplan gespeichert')};
+}
+function pickExercise(cb){
+  openModal(`<h2>Übung auswählen</h2><div id="pickList"></div>`);
+  $('#pickList').innerHTML=db.exercises.length?db.exercises.map(e=>`<div class="history-card"><div><h3>${esc(e.name)}</h3><p>${esc(e.muscle)}</p></div><button class="small-btn" data-pick="${e.id}">＋</button></div>`).join(''):'<p class="note">Lege zuerst eine eigene Übung an.</p>';
+  $$('[data-pick]').forEach(b=>b.onclick=()=>cb(b.dataset.pick));
+}
+function renderSessionSelect(){
+  $('#sessionPlanSelect').innerHTML=db.plans.length?db.plans.map(p=>`<option value="${p.id}">${weekdays[p.weekday]} – ${esc(p.name)}</option>`).join(''):'<option>Kein Trainingstag vorhanden</option>';
+  $('#startSession').disabled=!db.plans.length;
+}
+function startSession(){
+  const p=db.plans.find(x=>x.id===$('#sessionPlanSelect').value);if(!p)return;
+  session={id:'w'+Date.now(),name:p.name,date:new Date().toISOString(),started:Date.now(),exercises:p.exercises.map(x=>({id:x.id,sets:Array.from({length:x.sets},()=>({weight:0,reps:x.reps,done:false}))}))};
+  $('#sessionSetup').classList.add('hidden');$('#activeSession').classList.remove('hidden');$('#sessionName').textContent=p.name;renderSession();sessionTimer=setInterval(updateSessionTime,1000);updateSessionTime();
+}
+function lastPerformance(id){for(const w of [...db.workouts].reverse()){const e=w.exercises.find(x=>x.id===id);if(e)return e}return null}
+function renderSession(){
+  $('#sessionExercises').innerHTML=session.exercises.map((e,ei)=>{const meta=ex(e.id),prev=lastPerformance(e.id),prevText=prev?'Letztes Mal: '+prev.sets.filter(s=>s.done).map(s=>`${s.weight} kg × ${s.reps}`).join(' · '):'Noch keine vorherige Leistung',max=prev?Math.max(0,...prev.sets.map(s=>s.weight||0)):0,suggest=max?`Vorschlag: ${fmt(max+2.5,1)} kg testen, wenn die Technik sauber war.`:'Wähle ein Gewicht mit 1–2 Wiederholungen Reserve.';return `<section class="card session-exercise"><h3>${esc(meta.name)}</h3><p class="previous">${prevText}</p>${e.sets.map((s,si)=>`<div class="set-row"><b>${si+1}</b><input data-weight="${ei}-${si}" type="number" step="0.5" placeholder="kg"><input data-reps="${ei}-${si}" type="number" value="${s.reps}" placeholder="Wdh."><button data-done="${ei}-${si}" class="done-btn">✓</button></div>`).join('')}<p class="note">${suggest}</p></section>`}).join('');
+  $$('[data-weight]').forEach(i=>i.onchange=()=>{const[a,b]=i.dataset.weight.split('-').map(Number);session.exercises[a].sets[b].weight=+i.value||0});
+  $$('[data-reps]').forEach(i=>i.onchange=()=>{const[a,b]=i.dataset.reps.split('-').map(Number);session.exercises[a].sets[b].reps=+i.value||0});
+  $$('[data-done]').forEach(b=>b.onclick=()=>{const[a,c]=b.dataset.done.split('-').map(Number);session.exercises[a].sets[c].done=!session.exercises[a].sets[c].done;b.classList.toggle('done');startRest()});
+}
+function updateSessionTime(){if(!session)return;const s=Math.floor((Date.now()-session.started)/1000);$('#sessionTime').textContent=`${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`}
+function showRest(s){$('#restTime').textContent=`${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`}
+function startRest(){clearInterval(restTimer);let left=selectedRest||db.goals.defaultRest;showRest(left);restTimer=setInterval(()=>{left--;showRest(left);if(left<=0){clearInterval(restTimer);navigator.vibrate?.([200,100,200]);toast('Pause beendet')}},1000)}
+function finishSession(){
+  if(!session||!confirm('Training abschließen?'))return;clearInterval(sessionTimer);clearInterval(restTimer);session.finished=Date.now();session.duration=Math.round((session.finished-session.started)/1000);db.workouts.push(session);saveDB();session=null;$('#activeSession').classList.add('hidden');$('#sessionSetup').classList.remove('hidden');renderAll();toast('Training gespeichert');
+}
+function cancelSession(){if(!session||!confirm('Training wirklich abbrechen? Es wird nicht gespeichert.'))return;clearInterval(sessionTimer);clearInterval(restTimer);session=null;$('#activeSession').classList.add('hidden');$('#sessionSetup').classList.remove('hidden');toast('Training verworfen')}
+function workoutSets(w){return w.exercises.reduce((s,e)=>s+e.sets.filter(x=>x.done).length,0)}
+function prCount(w){
+  let c=0;for(const e of w.exercises){const before=db.workouts.filter(x=>new Date(x.date)<new Date(w.date)).flatMap(x=>x.exercises.filter(y=>y.id===e.id).flatMap(y=>y.sets.filter(s=>s.done).map(s=>(s.weight||0)*(1+(s.reps||0)/30))));const old=Math.max(0,...before),now=Math.max(0,...e.sets.filter(s=>s.done).map(s=>(s.weight||0)*(1+(s.reps||0)/30)));if(now>old&&now>0)c++}return c
+}
+function renderWorkoutHistory(){
+  $('#workoutHistory').innerHTML=db.workouts.length?[...db.workouts].reverse().map(w=>`<div class="history-card"><div><h3>${esc(w.name)}</h3><p>${new Date(w.date).toLocaleDateString('de-DE')} · ${Math.round((w.duration||0)/60)} Min. · ${w.exercises.length} Übungen · ${workoutSets(w)} Sätze${prCount(w)?' · '+prCount(w)+' PR':''}</p></div><div class="history-actions"><button class="details-btn" data-details="${w.id}">Details</button><button class="delete-btn" data-delete-workout="${w.id}">Löschen</button></div></div>`).join(''):'<p class="note">Noch keine Trainings.</p>';
+  $$('[data-delete-workout]').forEach(b=>b.onclick=()=>{if(confirm('Dieses Training wirklich löschen?')){db.workouts=db.workouts.filter(w=>w.id!==b.dataset.deleteWorkout);saveDB();renderWorkoutHistory();renderProgress();renderDashboard();toast('Training gelöscht')}});
+  $$('[data-details]').forEach(b=>b.onclick=()=>showWorkoutDetails(b.dataset.details));
+}
+function showWorkoutDetails(id){
+  const w=db.workouts.find(x=>x.id===id);if(!w)return;
+  openModal(`<h2>${esc(w.name)}</h2><p class="note">${new Date(w.date).toLocaleString('de-DE')} · ${Math.round((w.duration||0)/60)} Min.</p>${w.exercises.map(e=>`<div class="summary-box"><b>${esc(ex(e.id).name)}</b><br>${e.sets.filter(s=>s.done).map((s,i)=>`Satz ${i+1}: ${fmt(s.weight,1)} kg × ${s.reps}`).join('<br>')||'Keine abgeschlossenen Sätze'}</div>`).join('')}`);
+}
+
+function bestSet(entry){return entry.sets.filter(s=>s.done).sort((a,b)=>((b.weight||0)*(1+(b.reps||0)/30))-((a.weight||0)*(1+(a.reps||0)/30)))[0]||null}
+function sessionsFor(id){return db.workouts.filter(w=>w.exercises.some(e=>e.id===id)).map(w=>({workout:w,exercise:w.exercises.find(e=>e.id===id)})).sort((a,b)=>new Date(b.workout.date)-new Date(a.workout.date))}
+function compare(cur,prev){
+  if(!cur||!prev)return'mid';const c=bestSet(cur.exercise),p=bestSet(prev.exercise);if(!c||!p)return'mid';const cs=(c.weight||0)*(1+(c.reps||0)/30),ps=(p.weight||0)*(1+(p.reps||0)/30);if(cs>ps*1.015)return'good';if(cs<ps*.985)return'bad';return'mid';
+}
+function renderProgress(){
+  const used=db.exercises.filter(e=>sessionsFor(e.id).length);
+  $('#exerciseProgress').innerHTML=used.length?used.map(e=>{const s=sessionsFor(e.id),state=compare(s[0],s[1]),latest=bestSet(s[0].exercise),label={good:'Fortschritt',bad:'Rückgang',mid:'Stabil'}[state];return `<button class="progress-card" data-progress="${e.id}"><div class="progress-head"><div><h3>${esc(e.name)}</h3><p>${s.length} Einheiten · zuletzt ${new Date(s[0].workout.date).toLocaleDateString('de-DE')}</p></div><span class="progress-badge ${state}">${label}</span></div><div class="session-compare"><div class="session-row ${state}"><span class="date">Letztes Mal</span><b>${latest?fmt(latest.weight,1)+' kg × '+latest.reps:'–'}</b><span class="arrow">${state==='good'?'↑':state==='bad'?'↓':'→'}</span></div></div></button>`}).join(''):'<p class="note">Sobald du Übungen trainierst, erscheint hier der visuelle Vergleich.</p>';
+  $$('[data-progress]').forEach(b=>b.onclick=()=>showProgress(b.dataset.progress));
+}
+function showProgress(id){
+  const e=ex(id),s=sessionsFor(id).slice(0,30);
+  openModal(`<h2>${esc(e.name)}</h2><p class="note">Vergleich deiner letzten Einheiten</p><div class="session-compare">${s.map((x,i)=>{const state=compare(x,s[i+1]),best=bestSet(x.exercise);return `<div class="session-row ${state}"><span class="date">${new Date(x.workout.date).toLocaleDateString('de-DE')}</span><b>${best?fmt(best.weight,1)+' kg × '+best.reps:'–'}</b><span class="arrow">${i===s.length-1?'•':state==='good'?'↑':state==='bad'?'↓':'→'}</span></div>`}).join('')}</div>`);
+}
+
+function renderSettings(){
+  const p=db.weightPlan,g=db.goals;
+  $('#startDate').value=p.startDate||dateKey();$('#startWeight').value=p.startWeight??'';$('#maintenanceCalories').value=p.maintenanceCalories??'';$('#plannedCalories').value=p.plannedCalories??'';$('#goalWeight').value=p.goalWeight??'';
+  $('#goalProtein').value=g.protein;$('#goalCarbs').value=g.carbs;$('#goalFat').value=g.fat;$('#goalSteps').value=g.steps;$('#defaultRest').value=g.defaultRest;selectedRest=g.defaultRest;showRest(selectedRest);renderWeightSummary();
+}
+function saveWeightPlan(e){
+  e.preventDefault();db.weightPlan={startDate:$('#startDate').value,startWeight:num('#startWeight'),maintenanceCalories:num('#maintenanceCalories'),plannedCalories:num('#plannedCalories'),goalWeight:num('#goalWeight')};saveDB();renderWeightSummary();renderDashboard();renderDayScreen();toast('Gewichtsplan gespeichert');
+}
+function saveGoals(e){
+  e.preventDefault();db.goals={protein:num('#goalProtein')||0,carbs:num('#goalCarbs')||0,fat:num('#goalFat')||0,steps:num('#goalSteps')||0,defaultRest:num('#defaultRest')||90};saveDB();renderAll();toast('Ziele gespeichert');
+}
+function renderWeightSummary(){
+  const p=db.weightPlan,box=$('#weightPlanSummary');
+  if(!Number.isFinite(+p.startWeight)||!Number.isFinite(+p.maintenanceCalories)||!Number.isFinite(+p.plannedCalories)){box.innerHTML='<b>Noch unvollständig</b><br>Bitte Startgewicht, Erhaltungskalorien und geplante Kalorien eintragen.';return}
+  const deficit=+p.maintenanceCalories-+p.plannedCalories,weekly=deficit*7/7700;let goal='';
+  if(Number.isFinite(+p.goalWeight)&&deficit>0){const days=Math.ceil((+p.startWeight-+p.goalWeight)*7700/deficit);if(days>=0){const d=parseDate(p.startDate);d.setDate(d.getDate()+days);goal=`<br>Ziel voraussichtlich am ${d.toLocaleDateString('de-DE')}`}}
+  box.innerHTML=`<b>${fmt(deficit)} kcal Defizit pro Tag</b><br>≈ ${fmt(weekly,2)} kg pro Woche${goal}`;
+}
+function exportData(){const b=new Blob([JSON.stringify(db,null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=`WesGym-Backup-${dateKey()}.json`;a.click();URL.revokeObjectURL(a.href)}
+function importData(e){const file=e.target.files[0];if(!file)return;const r=new FileReader();r.onload=()=>{try{db=JSON.parse(r.result);saveDB();location.reload()}catch{toast('Ungültige Datei')}};r.readAsText(file)}

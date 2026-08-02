@@ -1,14 +1,21 @@
-# WesGym – vollständige PWA
+# WesGym 1.0
 
-Alle Dateien liegen absichtlich direkt in einem Ordner, damit beim Upload über GitHub auf dem iPhone keine Unterordner verloren gehen.
+Clean standalone version without update-v1/v2/v3 files.
 
-## Upload
-1. ZIP entpacken.
-2. Alle Dateien im Ordner WesGym_Complete markieren.
-3. Direkt in das GitHub-Repository hochladen.
-4. GitHub Pages: main / (root).
+## Upload to GitHub
+Delete the old repository files, then upload only the files from this folder:
+- index.html
+- style.css
+- app.js
+- manifest.json
+- sw.js
+- icon-192.png
+- icon-512.png
+- .nojekyll
+- README.md
 
-## iPhone
-In Safari öffnen → Teilen → Zum Home-Bildschirm.
+GitHub Pages:
+Settings → Pages → Deploy from a branch → main → /(root)
 
-Die Daten bleiben lokal auf dem Gerät. Backups können unter Einstellungen exportiert/importiert werden.
+Open:
+https://wesam49.github.io/WesGym/?v=10
