@@ -1,24 +1,17 @@
-WesGym Update 2
+WesGym Update 3
 
-Upload all 4 files to the ROOT of your GitHub repository:
+Upload these 3 files to the ROOT of your GitHub repository:
 
-- index.html          (replace old file)
-- sw.js               (replace old file)
-- update-v2.css       (new file)
-- update-v2.js        (new file)
+- index.html      (replace old file)
+- sw.js           (replace old file)
+- update-v3.js    (new file)
 
-Keep all other existing files unchanged.
+Keep all other files.
 
-After Commit:
-1. Wait 1–2 minutes.
-2. Open https://wesam49.github.io/WesGym/
-3. Refresh Safari. If the old version remains, close the tab and reopen it.
-
-This update adds:
-- Professional day cards instead of an Excel-style table.
-- Date navigation for past and future days.
-- Separate Plan and Actual values.
-- Daily score and color status.
-- Edit/delete custom exercises.
-- Workout history without volume.
-- Visual exercise progress cards in green/red/neutral.
+New behavior:
+- Enter start date, start weight, maintenance calories and planned calories once.
+- WesGym calculates the planned weight for every day automatically.
+- You only enter the actual weight.
+- Daily comparison: ahead of plan / behind plan / on plan.
+- Main evaluation uses the 7-day actual average versus the 7-day planned average.
+- Changing calories updates future expected weights from the chosen start point.
