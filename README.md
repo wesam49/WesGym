@@ -1,3 +1,9 @@
-# WesGym Simple 2.1
+# WesGym Goal 3.0
 
-7-Tage-Trend zeigt jetzt ausschließlich die tatsächliche Gewichtsänderung innerhalb der letzten 7 Tage. Der Planvergleich bleibt separat.
+Zielorientierte Version:
+- Zielgewicht im Mittelpunkt.
+- Geplanter vs. aktueller Zieltermin.
+- Kalorienabweichungen verschieben den aktuellen Zieltermin.
+- Mehrere Trainingstage auswählbar.
+- Verpasstes Training beeinflusst den Zieltermin.
+- Interaktive, professionelle animierte Hintergrundelemente.

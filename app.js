@@ -13,3 +13,72 @@ function editDay(k){const d=actual(k),plan=expectedWeight(k);openModal(`<h2>${pa
 function renderPlan(){const p=db.plan;$('#startDate').value=p.startDate||dateKey();$('#startWeight').value=p.startWeight??'';$('#maintenanceCalories').value=p.maintenanceCalories??'';$('#plannedCalories').value=p.plannedCalories??'';$('#goalWeight').value=p.goalWeight??'';const box=$('#planSummary');if(!Number.isFinite(+p.startWeight)||!p.startDate||!Number.isFinite(+p.maintenanceCalories)||!Number.isFinite(+p.plannedCalories)){box.innerHTML='<div class="summary-item"><span>Status</span><strong>Plan noch nicht vollständig</strong></div>';return}const def=+p.maintenanceCalories-+p.plannedCalories,weekly=def*7/7700;let goal='–';if(Number.isFinite(+p.goalWeight)&&def>0&&+p.goalWeight<+p.startWeight){const days=Math.ceil((+p.startWeight-+p.goalWeight)*7700/def),d=parseDate(p.startDate);d.setDate(d.getDate()+days);goal=d.toLocaleDateString('de-DE')}box.innerHTML=`<div class="summary-item"><span>Defizit pro Tag</span><strong>${fmt(def)} kcal</strong></div><div class="summary-item"><span>Tempo</span><strong>≈ ${fmt(weekly,2)} kg / Woche</strong></div><div class="summary-item"><span>Geplant in 30 Tagen</span><strong>${fmt(+p.startWeight-(def*30/7700),1)} kg</strong></div><div class="summary-item"><span>Zieltermin</span><strong>${goal}</strong></div>`}
 function savePlan(e){e.preventDefault();db.plan={startDate:$('#startDate').value,startWeight:num('#startWeight'),maintenanceCalories:num('#maintenanceCalories'),plannedCalories:num('#plannedCalories'),goalWeight:num('#goalWeight')};save();renderAll();toast('Plan gespeichert')}
 function exportData(){const b=new Blob([JSON.stringify(db,null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=`WesGym-Backup-${dateKey()}.json`;a.click();URL.revokeObjectURL(a.href)}function importData(e){const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{db=JSON.parse(r.result);save();location.reload()}catch{toast('Ungültige Datei')}};r.readAsText(f)}
+/* Goal-first update 3.0 */
+db.gym=db.gym||{weekdays:[],calories:300};
+
+function gymDay(k){return (db.gym.weekdays||[]).includes(parseDate(k).getDay())}
+function planDeficitFor(k){return ((+db.plan.maintenanceCalories||0)-(+db.plan.plannedCalories||0))+(gymDay(k)?(+db.gym.calories||0):0)}
+function goalDateOriginal(){
+  const p=db.plan;
+  if(!p.startDate||!Number.isFinite(+p.startWeight)||!Number.isFinite(+p.goalWeight)||+p.goalWeight>=+p.startWeight)return null;
+  let k=p.startDate,w=+p.startWeight,guard=0;
+  while(w>+p.goalWeight&&guard<2000){w-=planDeficitFor(k)/7700;const d=parseDate(k);d.setDate(d.getDate()+1);k=dateKey(d);guard++}
+  return guard<2000?k:null;
+}
+function accumulatedDeviation(){
+  const p=db.plan;if(!p.startDate)return 0;let total=0;
+  Object.values(db.days).forEach(d=>{
+    if(d.date<p.startDate||d.date>dateKey())return;
+    if(Number.isFinite(+d.calories))total+=(+d.calories-(+p.plannedCalories||0));
+    if(gymDay(d.date)&&d.gymDone!==true)total+=(+db.gym.calories||0);
+  });
+  return total;
+}
+function avgPlannedDeficit(){
+  const base=(+db.plan.maintenanceCalories||0)-(+db.plan.plannedCalories||0);
+  return base+((db.gym.weekdays||[]).length*(+db.gym.calories||0)/7);
+}
+function goalDateCurrent(){
+  const orig=goalDateOriginal();if(!orig)return null;
+  const avg=avgPlannedDeficit();if(avg<=0)return orig;
+  const shift=Math.round(accumulatedDeviation()/avg);
+  const d=parseDate(orig);d.setDate(d.getDate()+shift);return dateKey(d);
+}
+function dayShift(){const a=goalDateOriginal(),b=goalDateCurrent();if(!a||!b)return null;return Math.round((parseDate(b)-parseDate(a))/86400000)}
+function latestKnownWeight(){const arr=Object.values(db.days).filter(d=>Number.isFinite(+d.weight)).sort((a,b)=>a.date.localeCompare(b.date));return arr.at(-1)?.weight??db.plan.startWeight}
+function goalProgress(){const s=+db.plan.startWeight,g=+db.plan.goalWeight,c=+latestKnownWeight();if(!Number.isFinite(s)||!Number.isFinite(g)||!Number.isFinite(c)||s===g)return 0;return Math.max(0,Math.min(100,(s-c)/(s-g)*100))}
+function todayCalorieImpact(){
+  const d=actual(dateKey()),planned=+db.plan.plannedCalories||0;
+  const cal=Number.isFinite(+d.calories)?+d.calories-planned:0;
+  const missed=gymDay(dateKey())&&d.gymDone!==true?(+db.gym.calories||0):0;
+  return{cal,missed,total:cal+missed};
+}
+function expectedWeight(k){
+  const p=db.plan;if(!p.startDate||!Number.isFinite(+p.startWeight)||parseDate(k)<parseDate(p.startDate))return null;
+  let cur=p.startDate,w=+p.startWeight,guard=0;
+  while(cur<k&&guard<2000){w-=planDeficitFor(cur)/7700;const d=parseDate(cur);d.setDate(d.getDate()+1);cur=dateKey(d);guard++}
+  return w;
+}
+function renderToday(){
+  const k=dateKey(),a=actual(k),p=expectedWeight(k),st=statusFor(k),orig=goalDateOriginal(),cur=goalDateCurrent(),shift=dayShift(),prog=goalProgress(),cw=latestKnownWeight(),remaining=Number.isFinite(+cw)&&Number.isFinite(+db.plan.goalWeight)?Math.max(0,+cw-(+db.plan.goalWeight)):null,impact=todayCalorieImpact();
+  $('#todayCard').innerHTML=`<section class="hero"><div class="goal-head"><div><span class="eyebrow">Aktuelles Gewicht</span><div><span class="big-weight">${Number.isFinite(+a.weight)?fmt(a.weight,1):fmt(cw,1)}</span> <span class="unit">kg</span></div><div class="plan-status ${st.className}">${st.text}</div></div><div class="hero-side"><span>Ziel</span><strong>${Number.isFinite(+db.plan.goalWeight)?fmt(db.plan.goalWeight,1)+' kg':'–'}</strong></div></div><div class="goal-progress"><i style="width:${prog}%"></i></div><div class="goal-meta"><span>${fmt(prog)} % geschafft</span><span>${Number.isFinite(+remaining)?fmt(remaining,1)+' kg übrig':'–'}</span></div><div class="goal-dates"><div class="goal-date"><span>Geplanter Zieltermin</span><strong>${orig?parseDate(orig).toLocaleDateString('de-DE'):'–'}</strong></div><div class="goal-date"><span>Aktueller Zieltermin</span><strong>${cur?parseDate(cur).toLocaleDateString('de-DE'):'–'}</strong></div></div><div class="date-shift ${shift===null?'neutral':shift>0?'bad':shift<0?'good':'mid'}">${shift===null?'Noch kein Vergleich':shift>0?`+${shift} Tage später`:shift<0?`${Math.abs(shift)} Tage früher`:'Zieltermin unverändert'}</div><div class="impact-box"><div class="impact ${impact.cal>100?'bad':impact.cal<-100?'good':'mid'}"><span>Essen heute</span><strong>${impact.cal>0?'+':''}${fmt(impact.cal)} kcal</strong><small>gegenüber deinem Plan</small></div><div class="impact ${impact.missed>0?'bad':'good'}"><span>Training heute</span><strong>${gymDay(k)?(a.gymDone===true?'Erledigt':'Noch offen'):'Kein Gym geplant'}</strong><small>${gymDay(k)?`Planwert ${fmt(db.gym.calories)} kcal`:''}</small></div></div><div class="mini-status">Sollgewicht heute: ${Number.isFinite(+p)?fmt(p,1)+' kg':'–'}</div></section>`;
+  $('#todayWeight').value=a.weight??'';$('#todayCalories').value=a.calories??'';
+  const gw=$('#gymTodayWrap');gw.classList.toggle('hidden',!gymDay(k));if(gymDay(k)){ $('#gymBurnLabel').textContent=`ca. ${fmt(db.gym.calories)} kcal im Plan`;$('#gymDone').checked=a.gymDone===true}
+  const strip=$('#recentDays');strip.innerHTML='';
+  for(let i=-5;i<=1;i++){const d=new Date();d.setDate(d.getDate()+i);const dk=dateKey(d),x=actual(dk),ss=statusFor(dk),b=document.createElement('button');b.className=`day-mini ${ss.className}`;b.innerHTML=`<span>${d.toLocaleDateString('de-DE',{weekday:'short',day:'2-digit',month:'2-digit'})}${gymDay(dk)?(x.gymDone===true?' · Gym ✓':' · Gym'):''}</span><strong>${Number.isFinite(+x.weight)?fmt(x.weight,1)+' kg':'–'}</strong><small>${ss.text}</small>`;b.onclick=()=>editDay(dk);strip.appendChild(b)}
+}
+function saveToday(e){e.preventDefault();const k=dateKey();db.days[k]={...actual(k),date:k,weight:num('#todayWeight'),calories:num('#todayCalories'),gymDone:gymDay(k)?$('#gymDone').checked:null};save();renderAll();toast('Tag gespeichert')}
+function renderPlan(){
+  const p=db.plan;$('#startDate').value=p.startDate||dateKey();$('#startWeight').value=p.startWeight??'';$('#maintenanceCalories').value=p.maintenanceCalories??'';$('#plannedCalories').value=p.plannedCalories??'';$('#goalWeight').value=p.goalWeight??'';
+  $('#gymCalories').value=db.gym.calories??300;
+  $('#weekdayPicker').innerHTML=['So','Mo','Di','Mi','Do','Fr','Sa'].map((n,i)=>`<button type="button" class="weekday-btn ${(db.gym.weekdays||[]).includes(i)?'active':''}" data-gym-day="${i}">${n}</button>`).join('');
+  $$('[data-gym-day]').forEach(b=>b.onclick=()=>b.classList.toggle('active'));
+  renderPlanSummary();
+}
+function renderPlanSummary(){
+  const box=$('#planSummary'),orig=goalDateOriginal(),cur=goalDateCurrent(),shift=dayShift(),base=(+db.plan.maintenanceCalories||0)-(+db.plan.plannedCalories||0),gymAvg=(db.gym.weekdays||[]).length*(+db.gym.calories||0)/7;
+  box.innerHTML=`<div class="summary-item"><span>Basisdefizit</span><strong>${fmt(base)} kcal / Tag</strong></div><div class="summary-item"><span>Gym im Wochenschnitt</span><strong>+${fmt(gymAvg)} kcal / Tag</strong></div><div class="summary-item"><span>Geplanter Zieltermin</span><strong>${orig?parseDate(orig).toLocaleDateString('de-DE'):'–'}</strong></div><div class="summary-item"><span>Aktueller Zieltermin</span><strong>${cur?parseDate(cur).toLocaleDateString('de-DE'):'–'}</strong></div><div class="summary-item"><span>Abweichung</span><strong>${shift===null?'–':shift>0?`+${shift} Tage`:shift<0?`${Math.abs(shift)} Tage früher`:'Im Plan'}</strong></div>`;
+}
+function saveGymPlan(){db.gym.weekdays=$$('[data-gym-day].active').map(b=>+b.dataset.gymDay);db.gym.calories=num('#gymCalories')||0;save();renderAll();toast('Trainingstage gespeichert')}
+
+document.addEventListener('DOMContentLoaded',()=>{$('#saveGymPlan')?.addEventListener('click',saveGymPlan)});
