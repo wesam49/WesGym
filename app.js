@@ -82,3 +82,210 @@ function renderPlanSummary(){
 function saveGymPlan(){db.gym.weekdays=$$('[data-gym-day].active').map(b=>+b.dataset.gymDay);db.gym.calories=num('#gymCalories')||0;save();renderAll();toast('Trainingstage gespeichert')}
 
 document.addEventListener('DOMContentLoaded',()=>{$('#saveGymPlan')?.addEventListener('click',saveGymPlan)});
+
+
+/* Goal 4.0 — theoretical calorie-derived weight */
+function calorieModelWeight(k=dateKey()){
+  const p=db.plan;
+  if(!p.startDate||!Number.isFinite(+p.startWeight)||parseDate(k)<parseDate(p.startDate))return null;
+  let cur=p.startDate, energyDeficit=0, guard=0;
+  while(cur<=k&&guard<2500){
+    const d=actual(cur);
+    const eaten=Number.isFinite(+d.calories)?+d.calories:(+p.plannedCalories||0);
+    const gymBurn=gymDay(cur)&&d.gymDone===true?(+db.gym.calories||0):0;
+    energyDeficit+=(+p.maintenanceCalories||0)-eaten+gymBurn;
+    const next=parseDate(cur);next.setDate(next.getDate()+1);cur=dateKey(next);guard++;
+  }
+  return +p.startWeight-energyDeficit/7700;
+}
+function calorieModelStats(k=dateKey()){
+  const p=db.plan;
+  if(!p.startDate)return{logged:0,missing:0,total:0};
+  let cur=p.startDate,logged=0,missing=0,total=0,guard=0;
+  while(cur<=k&&guard<2500){
+    total++;
+    if(Number.isFinite(+actual(cur).calories))logged++;else missing++;
+    const next=parseDate(cur);next.setDate(next.getDate()+1);cur=dateKey(next);guard++;
+  }
+  return{logged,missing,total};
+}
+function calorieVsPlanStatus(k=dateKey()){
+  const c=calorieModelWeight(k),p=expectedWeight(k);
+  if(!Number.isFinite(+c)||!Number.isFinite(+p))return{className:'neutral',text:'Noch keine Berechnung',diff:null};
+  const diff=+c-+p;
+  if(Math.abs(diff)<=.05)return{className:'mid',text:'Kalorienmodell genau im Plan',diff};
+  if(diff<0)return{className:'good',text:`Kalorienmodell ${fmt(Math.abs(diff),1)} kg vor dem Plan`,diff};
+  return{className:'bad',text:`Kalorienmodell ${fmt(diff,1)} kg hinter dem Plan`,diff};
+}
+function scaleVsCalorieText(k=dateKey()){
+  const scale=actual(k).weight,model=calorieModelWeight(k);
+  if(!Number.isFinite(+scale)||!Number.isFinite(+model))return'Differenz noch nicht verfügbar';
+  const diff=+scale-+model;
+  if(Math.abs(diff)<.05)return'Waage und Kalorienmodell liegen gleich';
+  return`Waage ${diff>0?fmt(diff,1)+' kg höher':fmt(Math.abs(diff),1)+' kg niedriger'} als das Kalorienmodell`;
+}
+function calorieProgress(){
+  const s=+db.plan.startWeight,g=+db.plan.goalWeight,c=+calorieModelWeight(dateKey());
+  if(!Number.isFinite(s)||!Number.isFinite(g)||!Number.isFinite(c)||s===g)return 0;
+  return Math.max(0,Math.min(100,(s-c)/(s-g)*100));
+}
+
+renderToday=function(){
+  const k=dateKey(),a=actual(k),planW=expectedWeight(k),scaleStatus=statusFor(k),
+        orig=goalDateOriginal(),cur=goalDateCurrent(),shift=dayShift(),
+        modelW=calorieModelWeight(k),modelStatus=calorieVsPlanStatus(k),
+        prog=calorieProgress(),remaining=Number.isFinite(+modelW)&&Number.isFinite(+db.plan.goalWeight)?Math.max(0,+modelW-(+db.plan.goalWeight)):null,
+        impact=todayCalorieImpact(),coverage=calorieModelStats(k);
+
+  $('#todayCard').innerHTML=`<section class="hero">
+    <div class="goal-head">
+      <div>
+        <span class="eyebrow">Kaloriengewicht · theoretisch</span>
+        <div><span class="big-weight">${Number.isFinite(+modelW)?fmt(modelW,1):'–'}</span> <span class="unit">kg</span></div>
+        <div class="plan-status ${modelStatus.className}">${modelStatus.text}</div>
+      </div>
+      <div class="hero-side"><span>Ziel</span><strong>${Number.isFinite(+db.plan.goalWeight)?fmt(db.plan.goalWeight,1)+' kg':'–'}</strong></div>
+    </div>
+
+    <div class="goal-progress"><i style="width:${prog}%"></i></div>
+    <div class="goal-meta"><span>${fmt(prog)} % theoretisch geschafft</span><span>${Number.isFinite(+remaining)?fmt(remaining,1)+' kg bis Ziel':'–'}</span></div>
+
+    <div class="weight-trio">
+      <div class="weight-tile plan"><span>Soll laut Plan</span><strong>${Number.isFinite(+planW)?fmt(planW,1)+' kg':'–'}</strong><small>bei geplanten Kalorien</small></div>
+      <div class="weight-tile model"><span>Nach Kalorien</span><strong>${Number.isFinite(+modelW)?fmt(modelW,1)+' kg':'–'}</strong><small>Energiebilanz-Modell</small></div>
+      <div class="weight-tile scale"><span>Waage</span><strong>${Number.isFinite(+a.weight)?fmt(a.weight,1)+' kg':'–'}</strong><small>${scaleVsCalorieText(k)}</small></div>
+    </div>
+
+    <div class="goal-dates">
+      <div class="goal-date"><span>Geplanter Zieltermin</span><strong>${orig?parseDate(orig).toLocaleDateString('de-DE'):'–'}</strong></div>
+      <div class="goal-date"><span>Aktueller Zieltermin</span><strong>${cur?parseDate(cur).toLocaleDateString('de-DE'):'–'}</strong></div>
+    </div>
+    <div class="date-shift ${shift===null?'neutral':shift>0?'bad':shift<0?'good':'mid'}">${shift===null?'Noch kein Vergleich':shift>0?`+${shift} Tage später`:shift<0?`${Math.abs(shift)} Tage früher`:'Zieltermin unverändert'}</div>
+
+    <div class="impact-box">
+      <div class="impact ${impact.cal>100?'bad':impact.cal<-100?'good':'mid'}"><span>Essen heute</span><strong>${impact.cal>0?'+':''}${fmt(impact.cal)} kcal</strong><small>gegenüber deinem Plan</small></div>
+      <div class="impact ${impact.missed>0?'bad':'good'}"><span>Training heute</span><strong>${gymDay(k)?(a.gymDone===true?'Erledigt':'Noch offen'):'Kein Gym geplant'}</strong><small>${gymDay(k)?`Planwert ${fmt(db.gym.calories)} kcal`:''}</small></div>
+    </div>
+
+    <div class="model-note">
+      <b>${scaleVsCalorieText(k)}</b>
+      <span>Das Kaloriengewicht ist ein theoretisches Energiebilanz-Modell. Die Waage kann durch Wasser, Salz, Glykogen und Magen-/Darminhalt abweichen.</span>
+      <small>${coverage.logged} von ${coverage.total} Tagen mit echten Kalorienwerten${coverage.missing?` · ${coverage.missing} fehlende Tage wurden mit Plan-Kalorien gerechnet`:''}</small>
+    </div>
+  </section>`;
+
+  $('#todayWeight').value=a.weight??'';
+  $('#todayCalories').value=a.calories??'';
+
+  const gw=$('#gymTodayWrap');
+  gw.classList.toggle('hidden',!gymDay(k));
+  if(gymDay(k)){
+    $('#gymBurnLabel').textContent=`ca. ${fmt(db.gym.calories)} kcal im Plan`;
+    $('#gymDone').checked=a.gymDone===true;
+  }
+
+  const strip=$('#recentDays');strip.innerHTML='';
+  for(let i=-5;i<=1;i++){
+    const d=new Date();d.setDate(d.getDate()+i);
+    const dk=dateKey(d),x=actual(dk),ss=statusFor(dk),cm=calorieModelWeight(dk),b=document.createElement('button');
+    b.className=`day-mini ${ss.className}`;
+    b.innerHTML=`<span>${d.toLocaleDateString('de-DE',{weekday:'short',day:'2-digit',month:'2-digit'})}${gymDay(dk)?(x.gymDone===true?' · Gym ✓':' · Gym'):''}</span><strong>${Number.isFinite(+cm)?fmt(cm,1)+' kg':'–'}</strong><small>Kaloriengewicht · Waage ${Number.isFinite(+x.weight)?fmt(x.weight,1):'–'}</small>`;
+    b.onclick=()=>editDay(dk);
+    strip.appendChild(b);
+  }
+};
+
+renderHistory=function(){
+  const all=Object.values(db.days).sort((a,b)=>b.date.localeCompare(a.date));
+  $('#historyList').innerHTML=all.length?all.map(d=>{
+    const st=statusFor(d.date),plan=expectedWeight(d.date),model=calorieModelWeight(d.date),gym=gymDay(d.date);
+    return `<div class="history-card ${st.className}">
+      <div class="history-top"><div><h3>${parseDate(d.date).toLocaleDateString('de-DE',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric'})}</h3><p>${Number.isFinite(+d.calories)?fmt(d.calories)+' kcal':'Keine Kalorien'}${gym?` · Gym ${d.gymDone===true?'✓':'✕'}`:''}</p></div><span class="history-status ${st.className}">${st.text}</span></div>
+      <div class="history-values history-three">
+        <div><span>Soll</span><strong>${Number.isFinite(+plan)?fmt(plan,1)+' kg':'–'}</strong></div>
+        <div><span>Kaloriengewicht</span><strong>${Number.isFinite(+model)?fmt(model,1)+' kg':'–'}</strong></div>
+        <div><span>Waage</span><strong>${Number.isFinite(+d.weight)?fmt(d.weight,1)+' kg':'–'}</strong></div>
+      </div>
+      <div class="history-actions"><button class="edit-btn" data-edit="${d.date}">Bearbeiten</button><button class="delete-btn" data-delete="${d.date}">Löschen</button></div>
+    </div>`;
+  }).join(''):'<p>Noch keine Einträge.</p>';
+  $$('[data-edit]').forEach(b=>b.onclick=()=>editDay(b.dataset.edit));
+  $$('[data-delete]').forEach(b=>b.onclick=()=>deleteDay(b.dataset.delete));
+};
+
+
+/* Goal 4.1 — dynamic time progress */
+function totalDaysBetween(a,b){
+  if(!a||!b)return null;
+  return Math.max(0,Math.round((parseDate(b)-parseDate(a))/86400000));
+}
+function elapsedPlanDays(){
+  const s=db.plan.startDate;
+  if(!s)return null;
+  return Math.max(0,totalDaysBetween(s,dateKey()));
+}
+function dynamicTimeProgress(){
+  const s=db.plan.startDate, currentTarget=goalDateCurrent();
+  if(!s||!currentTarget)return{pct:0,elapsed:null,total:null,remaining:null};
+  const elapsed=Math.max(0,totalDaysBetween(s,dateKey()));
+  const total=Math.max(1,totalDaysBetween(s,currentTarget));
+  const remaining=Math.max(0,totalDaysBetween(dateKey(),currentTarget));
+  const pct=Math.max(0,Math.min(100,(elapsed/total)*100));
+  return{pct,elapsed,total,remaining};
+}
+function plannedTimeProgress(){
+  const s=db.plan.startDate, plannedTarget=goalDateOriginal();
+  if(!s||!plannedTarget)return{pct:0,elapsed:null,total:null,remaining:null};
+  const elapsed=Math.max(0,totalDaysBetween(s,dateKey()));
+  const total=Math.max(1,totalDaysBetween(s,plannedTarget));
+  const remaining=Math.max(0,totalDaysBetween(dateKey(),plannedTarget));
+  const pct=Math.max(0,Math.min(100,(elapsed/total)*100));
+  return{pct,elapsed,total,remaining};
+}
+
+/* Wrap the existing renderToday to add time-progress visualization */
+const _renderToday_40 = renderToday;
+renderToday=function(){
+  _renderToday_40();
+
+  const hero=$('#todayCard .hero');
+  if(!hero)return;
+
+  const currentTP=dynamicTimeProgress();
+  const plannedTP=plannedTimeProgress();
+  const shift=dayShift();
+
+  const timeBlock=document.createElement('div');
+  timeBlock.className='time-progress-block';
+  timeBlock.innerHTML=`
+    <div class="time-progress-head">
+      <div>
+        <span class="eyebrow">Zeitfortschritt bis zum Ziel</span>
+        <strong>${currentTP.remaining===null?'–':currentTP.remaining+' Tage übrig'}</strong>
+      </div>
+      <span class="time-percent">${fmt(currentTP.pct)} %</span>
+    </div>
+    <div class="time-progress-track"><i style="width:${currentTP.pct}%"></i></div>
+    <div class="time-progress-meta">
+      <span>${currentTP.elapsed===null?'–':currentTP.elapsed+' Tage geschafft'}</span>
+      <span>${currentTP.total===null?'–':currentTP.total+' Tage Gesamtstrecke'}</span>
+    </div>
+    <div class="time-compare-grid">
+      <div class="time-mini">
+        <span>Originaler Plan</span>
+        <strong>${plannedTP.remaining===null?'–':plannedTP.remaining+' Tage'}</strong>
+        <small>${fmt(plannedTP.pct)} % Zeitfortschritt</small>
+      </div>
+      <div class="time-mini current ${shift>0?'bad':shift<0?'good':'mid'}">
+        <span>Aktuelle Prognose</span>
+        <strong>${currentTP.remaining===null?'–':currentTP.remaining+' Tage'}</strong>
+        <small>${shift===null?'Noch kein Vergleich':shift>0?`+${shift} Tage später`:shift<0?`${Math.abs(shift)} Tage früher`:'Im Zeitplan'}</small>
+      </div>
+    </div>
+    <p class="time-explain">Dieser Fortschritt reagiert auf deine echte Kalorienbilanz und den aktuellen prognostizierten Zieltermin. Wenn sich dein Zieltermin nach hinten verschiebt, kann die Prozentzahl sinken; wenn du Zeit aufholst, steigt sie schneller.</p>
+  `;
+
+  const goalDates=hero.querySelector('.goal-dates');
+  if(goalDates) goalDates.before(timeBlock);
+  else hero.appendChild(timeBlock);
+};
