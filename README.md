@@ -1,9 +1,8 @@
-# WesGym Goal 4.1
+# WesGym Goal 4.2
 
 Neu:
-- Visueller Zeitfortschritt bis zum Ziel.
-- Fortschritt basiert auf Startdatum → aktuellem prognostiziertem Zieltermin.
-- Zeigt verbleibende Tage, vergangene Tage und Gesamtstrecke.
-- Vergleicht originalen Plan mit aktueller Prognose.
-- Wenn echte Kalorien den Zieltermin verschieben, reagiert auch der Zeit-Fortschrittsbalken dynamisch.
-- Gewichtsfortschritt aus Version 4.0 bleibt erhalten.
+- Zusätzliche zweite Fortschrittslinie für das echte Waagengewicht.
+- Jetzt gibt es zwei getrennte visuelle Fortschritte:
+  1. theoretischer Fortschritt nach Kalorien
+  2. praktischer Fortschritt laut Waage
+- Zeigt Prozent, geschaffte kg und verbleibende kg bis zum Ziel.

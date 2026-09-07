@@ -289,3 +289,56 @@ renderToday=function(){
   if(goalDates) goalDates.before(timeBlock);
   else hero.appendChild(timeBlock);
 };
+
+
+/* Goal 4.2 — add practical scale progress line */
+function actualScaleWeightForProgress(){
+  const todayW = actual(dateKey()).weight;
+  if(Number.isFinite(+todayW)) return +todayW;
+  const arr = Object.values(db.days).filter(d=>Number.isFinite(+d.weight)).sort((a,b)=>a.date.localeCompare(b.date));
+  return Number.isFinite(+arr.at(-1)?.weight) ? +arr.at(-1).weight : null;
+}
+function actualScaleProgress(){
+  const s=+db.plan.startWeight,g=+db.plan.goalWeight,w=actualScaleWeightForProgress();
+  if(!Number.isFinite(s)||!Number.isFinite(g)||!Number.isFinite(w)||s===g){
+    return {pct:0,lost:null,total:null,remaining:null,weight:null};
+  }
+  const lost = s - w;
+  const total = s - g;
+  const remaining = Math.max(0, w - g);
+  const pct = Math.max(0, Math.min(100, (lost/total)*100));
+  return {pct,lost,total,remaining,weight:w};
+}
+
+const _renderToday_41 = renderToday;
+renderToday = function(){
+  _renderToday_41();
+
+  const hero = $('#todayCard .hero');
+  if(!hero) return;
+
+  const scale = actualScaleProgress();
+  const goalMeta = hero.querySelector('.goal-meta');
+  if(!goalMeta) return;
+
+  const block = document.createElement('div');
+  block.className = 'scale-progress-block';
+  block.innerHTML = `
+    <div class="scale-progress-head">
+      <div>
+        <span class="eyebrow">Fortschritt laut Waage</span>
+        <strong>${Number.isFinite(+scale.weight) ? fmt(scale.weight,1)+' kg aktuell' : 'Noch kein Waagenwert'}</strong>
+      </div>
+      <span class="scale-percent">${fmt(scale.pct)} %</span>
+    </div>
+    <div class="scale-progress-track"><i style="width:${scale.pct}%"></i></div>
+    <div class="scale-progress-meta">
+      <span>${scale.lost===null ? '–' : fmt(scale.lost,1)+' kg geschafft'}</span>
+      <span>${scale.remaining===null ? '–' : fmt(scale.remaining,1)+' kg bis Ziel'}</span>
+    </div>
+  `;
+
+  const existing = hero.querySelector('.scale-progress-block');
+  if(existing) existing.remove();
+  goalMeta.after(block);
+};

@@ -60,3 +60,13 @@ body{background:linear-gradient(180deg,#f5f9ff,#eef4fb 58%,#f8fafc);overflow-x:h
 .time-mini small{display:block;font-size:10px;color:var(--muted);margin-top:3px}
 .time-explain{margin:11px 0 0;color:var(--muted);font-size:10px;line-height:1.45}
 @media(max-width:390px){.time-compare-grid{grid-template-columns:1fr}.time-progress-meta{flex-direction:column;gap:2px}}
+
+
+.scale-progress-block{margin-top:14px;padding-top:2px}
+.scale-progress-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.scale-progress-head strong{display:block;font-size:18px;margin-top:4px;letter-spacing:-.3px}
+.scale-percent{font-size:20px;font-weight:950;letter-spacing:-.4px}
+.scale-progress-track{height:12px;background:#e8edf4;border-radius:999px;overflow:hidden;margin-top:10px}
+.scale-progress-track i{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,#34c759,#19a34a);transition:width .45s ease}
+.scale-progress-meta{display:flex;justify-content:space-between;gap:10px;margin-top:7px;color:var(--muted);font-size:10px}
+@media(max-width:390px){.scale-progress-meta{flex-direction:column;gap:2px}}
