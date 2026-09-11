@@ -1,8 +1,8 @@
-# WesGym Goal 4.2
+# WesGym Goal 4.4
 
 Neu:
-- Zusätzliche zweite Fortschrittslinie für das echte Waagengewicht.
-- Jetzt gibt es zwei getrennte visuelle Fortschritte:
-  1. theoretischer Fortschritt nach Kalorien
-  2. praktischer Fortschritt laut Waage
-- Zeigt Prozent, geschaffte kg und verbleibende kg bis zum Ziel.
+- Aktueller Zieltermin basiert ab 3 echten Waagenwerten primär auf dem Waagentrend statt nur auf Kalorien.
+- Kalorienmodell bleibt Fallback, wenn noch zu wenige Gewichtsdaten vorhanden sind.
+- Training „Noch offen“ verzögert den Zieltermin am selben Tag nicht mehr.
+- Neue Gewichtsprognose mit 7/14/30/60 Tagen und frei wählbarem Datum.
+- Prognose zeigt aktuellen Forecast, Soll laut Plan und Kalorien-Prognose.
