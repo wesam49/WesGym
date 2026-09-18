@@ -1,8 +1,10 @@
-# WesGym Goal 4.4
+# WesGym Goal 4.5
 
 Neu:
-- Aktueller Zieltermin basiert ab 3 echten Waagenwerten primär auf dem Waagentrend statt nur auf Kalorien.
-- Kalorienmodell bleibt Fallback, wenn noch zu wenige Gewichtsdaten vorhanden sind.
-- Training „Noch offen“ verzögert den Zieltermin am selben Tag nicht mehr.
-- Neue Gewichtsprognose mit 7/14/30/60 Tagen und frei wählbarem Datum.
-- Prognose zeigt aktuellen Forecast, Soll laut Plan und Kalorien-Prognose.
+- Kalorien im Verlauf: grün bis einschließlich +100 kcal über Plan, darüber rot.
+- Gym im Verlauf: erledigt grün, verpasst rot, heute/offen neutral.
+- Kalorien-Serie in Tagen.
+- Gym-Serie in vollständig absolvierten Wochen.
+- Trainingskalender mit Einzelterminen und wöchentlichen Serien.
+- Serientermine können einzeln oder ab einem gewählten Termin für alle zukünftigen Termine geändert/gelöscht werden.
+- Kalendertermine steuern auch die geplanten Gym-Tage in Prognosen und Defizitberechnungen.

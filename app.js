@@ -615,3 +615,172 @@ renderToday=function(){
 }
 
 document.addEventListener('DOMContentLoaded',()=>{initForecastControls();renderForecast()});
+
+
+/* Goal 4.5 — adherence colors, weekly streaks and recurring gym calendar */
+function id45(){return 'g'+Date.now().toString(36)+Math.random().toString(36).slice(2,7)}
+function prevDay45(k){return addDays44(k,-1)}
+function maxDate45(a,b){return !a?b:!b?a:(a>b?a:b)}
+function monday45(k){const d=parseDate(k),day=d.getDay(),diff=(day===0?-6:1-day);d.setDate(d.getDate()+diff);return dateKey(d)}
+function sunday45(k){return addDays44(monday45(k),6)}
+function nextWeek45(k){return addDays44(k,7)}
+function prevWeek45(k){return addDays44(k,-7)}
+function firstWeekdayOnOrAfter45(start,weekday){let k=start;for(let i=0;i<7;i++){if(parseDate(k).getDay()===weekday)return k;k=addDays44(k,1)}return start}
+
+function ensureGymCalendar45(){
+  db.gym=db.gym||{weekdays:[],calories:300};
+  db.gym.series=Array.isArray(db.gym.series)?db.gym.series:[];
+  db.gym.skips=Array.isArray(db.gym.skips)?db.gym.skips:[];
+  if(!db.gym.calendarMigrated45 && db.gym.series.length===0 && Array.isArray(db.gym.weekdays) && db.gym.weekdays.length){
+    const base=db.plan.startDate||dateKey();
+    db.gym.weekdays.forEach(w=>db.gym.series.push({id:id45(),type:'weekly',start:firstWeekdayOnOrAfter45(base,+w),end:null,weekday:+w}));
+    db.gym.weekdays=[];
+    db.gym.calendarMigrated45=true;
+    save();
+  } else if(!db.gym.calendarMigrated45){db.gym.calendarMigrated45=true;save()}
+}
+ensureGymCalendar45();
+
+function skip45(seriesId,k){return db.gym.skips.some(x=>x.seriesId===seriesId&&x.date===k)}
+function gymOccurrences45(k){
+  const out=[];
+  for(const s of db.gym.series||[]){
+    if(s.type==='once'){
+      if(s.date===k)out.push(s);
+    }else if(s.type==='weekly'){
+      if(k>=s.start&&(!s.end||k<=s.end)&&parseDate(k).getDay()===+s.weekday&&!skip45(s.id,k))out.push(s);
+    }
+  }
+  return out;
+}
+gymDay=function(k){return gymOccurrences45(k).length>0}
+
+avgPlannedDeficit=function(){
+  const base=(+db.plan.maintenanceCalories||0)-(+db.plan.plannedCalories||0);
+  let extra=0,start=dateKey();
+  for(let i=0;i<28;i++)if(gymDay(addDays44(start,i)))extra+=(+db.gym.calories||0);
+  return base+extra/28;
+}
+
+function plannedGymDates45(from,to){const a=[];for(let k=from;k<=to;k=addDays44(k,1))if(gymDay(k))a.push(k);return a}
+function gymWeekStatus45(ws){
+  const we=addDays44(ws,6),today=dateKey(),planned=plannedGymDates45(ws,we),done=planned.filter(k=>actual(k).gymDone===true);
+  const allDue=planned.length>0&&planned.every(k=>k<=today);
+  return{planned:planned.length,done:done.length,dates:planned,complete:allDue&&done.length===planned.length,finished:we<today||allDue};
+}
+function gymStreak45(){
+  const current=monday45(dateKey()),cur=gymWeekStatus45(current);
+  let ws=current,count=0;
+  if(!cur.complete)ws=prevWeek45(ws);
+  for(let i=0;i<104;i++){
+    const st=gymWeekStatus45(ws);
+    if(!st.planned)break;
+    if(!st.complete)break;
+    count++;ws=prevWeek45(ws);
+  }
+  return{weeks:count,current:cur};
+}
+function calorieOk45(k){const c=actual(k).calories,p=+db.plan.plannedCalories;if(!hasNumberValue(c)||!hasNumberValue(p))return null;return +c<=p+100}
+function calorieStreak45(){
+  let k=dateKey();if(!hasNumberValue(actual(k).calories))k=prevDay45(k);
+  let n=0;for(let i=0;i<1000;i++){const ok=calorieOk45(k);if(ok!==true)break;n++;k=prevDay45(k)}return n;
+}
+function renderStreaks45(){
+  const box=$('#streakSummary');if(!box)return;
+  const gs=gymStreak45(),cs=calorieStreak45(),cur=gs.current;
+  box.innerHTML=`<div class="streak-item calories"><span>Kalorien-Serie</span><strong>🔥 ${cs} ${cs===1?'Tag':'Tage'}</strong><small>grün bis einschließlich +100 kcal</small></div><div class="streak-item gym"><span>Gym-Serie</span><strong>🏋️ ${gs.weeks} ${gs.weeks===1?'Woche':'Wochen'}</strong><small>${cur.planned?`${cur.done}/${cur.planned} Trainings diese Woche`:'Diese Woche kein Training geplant'}</small></div>`;
+}
+
+function calorieColor45(d){const ok=calorieOk45(d.date);return ok===null?'neutral':ok?'good':'bad'}
+function gymColor45(d){if(!gymDay(d.date))return'neutral';if(d.gymDone===true)return'good';if(d.date<dateKey())return'bad';return'neutral'}
+renderHistory=function(){
+  renderStreaks45();
+  const all=Object.values(db.days).sort((a,b)=>b.date.localeCompare(a.date));
+  $('#historyList').innerHTML=all.length?all.map(d=>{
+    const st=statusFor(d.date),plan=expectedWeight(d.date),model=calorieModelWeight(d.date),gym=gymDay(d.date),cc=calorieColor45(d),gc=gymColor45(d);
+    const calText=hasNumberValue(d.calories)?fmt(d.calories)+' kcal':'Keine Kalorien';
+    const gymText=gym?`<span class="history-gym ${gc}">Gym ${d.gymDone===true?'✓':d.date<dateKey()?'×':'offen'}</span>`:'';
+    return `<div class="history-card ${st.className}"><div class="history-top"><div><h3>${parseDate(d.date).toLocaleDateString('de-DE',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric'})}</h3><p><span class="history-cal ${cc}">${calText}</span>${gym?` · ${gymText}`:''}</p></div><span class="history-status ${st.className}">${st.text}</span></div><div class="history-values history-three"><div><span>Soll</span><strong>${hasNumberValue(plan)?fmt(plan,1)+' kg':'–'}</strong></div><div><span>Kaloriengewicht</span><strong>${hasNumberValue(model)?fmt(model,1)+' kg':'–'}</strong></div><div><span>Waage</span><strong>${hasValidWeight(d.weight)?fmt(d.weight,1)+' kg':'–'}</strong></div></div><div class="history-actions"><button class="edit-btn" data-edit="${d.date}">Bearbeiten</button><button class="delete-btn" data-delete="${d.date}">Löschen</button></div></div>`;
+  }).join(''):'<p>Noch keine Einträge.</p>';
+  $$('[data-edit]').forEach(b=>b.onclick=()=>editDay(b.dataset.edit));
+  $$('[data-delete]').forEach(b=>b.onclick=()=>deleteDay(b.dataset.delete));
+}
+
+editDay=function(k){
+  const d=actual(k),plan=expectedWeight(k),gym=gymDay(k);
+  openModal(`<h2>${parseDate(k).toLocaleDateString('de-DE',{weekday:'long',day:'2-digit',month:'long'})}</h2><p>Sollgewicht: ${hasNumberValue(plan)?fmt(plan,1)+' kg':'–'}</p><form id="editDayForm" class="form"><label>Gewicht (kg)<input id="editWeight" type="number" step="0.1" value="${d.weight??''}"></label><label>Kalorien<input id="editCalories" type="number" value="${d.calories??''}"></label>${gym?`<div class="gym-check"><div><b>Training erledigt</b><small>Geplant · ca. ${fmt(db.gym.calories)} kcal</small></div><label class="switch-label"><input id="editGymDone" type="checkbox" ${d.gymDone===true?'checked':''}><span></span></label></div>`:''}<button class="primary">Speichern</button></form>`);
+  $('#editDayForm').onsubmit=e=>{e.preventDefault();db.days[k]={...d,date:k,weight:num('#editWeight'),calories:num('#editCalories'),gymDone:gym?$('#editGymDone').checked:null};save();closeModal();renderAll();toast('Tag gespeichert')};
+}
+
+function upcomingGym45(limit=16){
+  const out=[],today=dateKey();let k=today;
+  for(let i=0;i<370&&out.length<limit;i++,k=addDays44(k,1))if(gymDay(k))out.push({date:k,series:gymOccurrences45(k)});
+  return out;
+}
+function renderGymCalendar45(){
+  const list=$('#gymCalendarList');if(!list)return;
+  const events=upcomingGym45();
+  list.innerHTML=events.length?events.map(e=>{const recurring=e.series.some(s=>s.type==='weekly');return `<button type="button" class="gym-event-row" data-gym-occurrence="${e.date}"><div><strong>${parseDate(e.date).toLocaleDateString('de-DE',{weekday:'long',day:'2-digit',month:'2-digit',year:'numeric'})}</strong><small>${recurring?'Wöchentliche Serie':'Einmaliger Termin'}</small></div><span>Bearbeiten ›</span></button>`}).join(''):'<div class="calendar-empty">Keine zukünftigen Trainings geplant.</div>';
+  $$('[data-gym-occurrence]').forEach(b=>b.onclick=()=>openGymOccurrence45(b.dataset.gymOccurrence));
+}
+renderPlan=function(){
+  const p=db.plan;$('#startDate').value=p.startDate||dateKey();$('#startWeight').value=p.startWeight??'';$('#maintenanceCalories').value=p.maintenanceCalories??'';$('#plannedCalories').value=p.plannedCalories??'';$('#goalWeight').value=p.goalWeight??'';
+  const gd=$('#gymEventDate');if(gd&&!gd.value)gd.value=dateKey();const gc=$('#gymCalories');if(gc)gc.value=db.gym.calories??300;
+  renderGymCalendar45();renderPlanSummary();
+}
+renderPlanSummary=function(){
+  const box=$('#planSummary'),orig=goalDateOriginal(),cur=goalDateCurrent(),shift=dayShift(),base=(+db.plan.maintenanceCalories||0)-(+db.plan.plannedCalories||0);
+  let sessions=0;for(let i=0;i<28;i++)if(gymDay(addDays44(dateKey(),i)))sessions++;
+  const gymAvg=sessions*(+db.gym.calories||0)/28;
+  box.innerHTML=`<div class="summary-item"><span>Basisdefizit</span><strong>${fmt(base)} kcal / Tag</strong></div><div class="summary-item"><span>Gym im 28-Tage-Schnitt</span><strong>+${fmt(gymAvg)} kcal / Tag</strong></div><div class="summary-item"><span>Geplanter Zieltermin</span><strong>${orig?parseDate(orig).toLocaleDateString('de-DE'):'–'}</strong></div><div class="summary-item"><span>Aktueller Zieltermin</span><strong>${cur?parseDate(cur).toLocaleDateString('de-DE'):'–'}</strong></div><div class="summary-item"><span>Abweichung</span><strong>${shift===null?'–':shift>0?`+${shift} Tage`:shift<0?`${Math.abs(shift)} Tage früher`:'Im Plan'}</strong></div>`;
+}
+
+function addGymEvent45(e){
+  e.preventDefault();const k=$('#gymEventDate').value,type=$('#gymEventRepeat').value,cal=num('#gymCalories');if(!k)return toast('Bitte Datum wählen');if(hasNumberValue(cal)&&cal>=0)db.gym.calories=cal;
+  if(type==='once')db.gym.series.push({id:id45(),type:'once',date:k});else db.gym.series.push({id:id45(),type:'weekly',start:k,end:null,weekday:parseDate(k).getDay()});
+  save();renderAll();toast(type==='weekly'?'Wöchentliche Serie hinzugefügt':'Training hinzugefügt');
+}
+function seriesForOccurrence45(k){return gymOccurrences45(k)[0]||null}
+function openGymOccurrence45(k){
+  const s=seriesForOccurrence45(k);if(!s)return;
+  if(s.type==='once'){
+    openModal(`<h2>Training bearbeiten</h2><p>${parseDate(k).toLocaleDateString('de-DE',{weekday:'long',day:'2-digit',month:'long',year:'numeric'})}</p><form id="oneGymForm" class="form"><label>Datum<input id="oneGymDate" type="date" value="${k}"></label><button class="primary">Speichern</button><button id="deleteOneGym" type="button" class="danger-soft">Termin löschen</button></form>`);
+    $('#oneGymForm').onsubmit=e=>{e.preventDefault();s.date=$('#oneGymDate').value;save();closeModal();renderAll();toast('Termin geändert')};
+    $('#deleteOneGym').onclick=()=>{db.gym.series=db.gym.series.filter(x=>x.id!==s.id);save();closeModal();renderAll();toast('Termin gelöscht')};return;
+  }
+  openModal(`<h2>Serientermin bearbeiten</h2><p>${parseDate(k).toLocaleDateString('de-DE',{weekday:'long',day:'2-digit',month:'long',year:'numeric'})}</p><label class="standalone-label">Neues Datum<input id="seriesGymDate" type="date" value="${k}"></label><div class="series-actions"><button id="moveThisGym" class="secondary" type="button">Nur diesen Termin ändern</button><button id="changeFutureGym" class="secondary" type="button">Diesen + zukünftige ändern</button><button id="deleteThisGym" class="danger-soft" type="button">Nur diesen Termin löschen</button><button id="deleteFutureGym" class="danger-soft" type="button">Diesen + zukünftige löschen</button></div>`);
+  $('#moveThisGym').onclick=()=>{const nk=$('#seriesGymDate').value;if(!nk)return;db.gym.skips.push({seriesId:s.id,date:k});db.gym.series.push({id:id45(),type:'once',date:nk});save();closeModal();renderAll();toast('Ein Termin geändert')};
+  $('#changeFutureGym').onclick=()=>{const nk=$('#seriesGymDate').value;if(!nk)return;s.end=prevDay45(k);db.gym.series.push({id:id45(),type:'weekly',start:nk,end:null,weekday:parseDate(nk).getDay()});save();closeModal();renderAll();toast('Zukünftige Serie geändert')};
+  $('#deleteThisGym').onclick=()=>{if(!skip45(s.id,k))db.gym.skips.push({seriesId:s.id,date:k});save();closeModal();renderAll();toast('Termin gelöscht')};
+  $('#deleteFutureGym').onclick=()=>{s.end=prevDay45(k);save();closeModal();renderAll();toast('Dieser und zukünftige Termine gelöscht')};
+}
+
+/* Weekly calendar also drives planned training in all weight/goal calculations. */
+const _saveToday45=saveToday;
+saveToday=function(e){_saveToday45(e);renderStreaks45()}
+
+/* Current-day calorie status is green through +100 kcal. */
+const _renderToday45=renderToday;
+renderToday=function(){
+  _renderToday45();
+  const imp=$('#todayCard .impact-box .impact:first-child');if(imp){const c=actual(dateKey()).calories;if(hasNumberValue(c)){imp.classList.remove('good','bad','mid');imp.classList.add(+c<=(+db.plan.plannedCalories||0)+100?'good':'bad')}}
+}
+
+/* Recalculate missed training only after the day has passed and only for planned calendar dates. */
+accumulatedDeviation=function(){
+  const p=db.plan;if(!p.startDate)return 0;let total=0,today=dateKey();
+  for(let k=p.startDate;k<=today;k=addDays44(k,1)){
+    const d=actual(k);if(hasNumberValue(d.calories))total+=(+d.calories-(+p.plannedCalories||0));
+    if(k<today&&gymDay(k)&&d.gymDone===false)total+=(+db.gym.calories||0);
+  }
+  return total;
+}
+
+function init45(){
+  const f=$('#gymEventForm');if(f&&!f.dataset.bound45){f.dataset.bound45='1';f.addEventListener('submit',addGymEvent45)}
+  const gd=$('#gymEventDate');if(gd){gd.min=db.plan.startDate||dateKey();if(!gd.value)gd.value=dateKey()}
+  renderStreaks45();renderGymCalendar45();
+}
+document.addEventListener('DOMContentLoaded',init45);
+const _renderAll45=renderAll;
+renderAll=function(){_renderAll45();init45()}
