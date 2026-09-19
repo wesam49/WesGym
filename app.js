@@ -784,3 +784,79 @@ function init45(){
 document.addEventListener('DOMContentLoaded',init45);
 const _renderAll45=renderAll;
 renderAll=function(){_renderAll45();init45()}
+
+
+/* Goal 4.6 — clearer progress since start */
+function signedKg46(start,current){
+  if(!hasNumberValue(start)||!hasNumberValue(current))return null;
+  return +current-(+start);
+}
+function signedKgText46(delta){
+  if(delta===null||!Number.isFinite(+delta))return '–';
+  if(Math.abs(+delta)<0.05)return '±0,0 kg';
+  return `${+delta<0?'−':'+'}${fmt(Math.abs(+delta),1)} kg`;
+}
+function progressSinceStart46(){
+  const start=hasValidWeight(db.plan.startWeight)?+db.plan.startWeight:null;
+  const model=calorieModelWeight(dateKey());
+  const scaleInfo=scaleDisplayInfo(dateKey());
+  const scale=hasValidWeight(scaleInfo.weight)?+scaleInfo.weight:null;
+  return {
+    start,
+    model:hasNumberValue(model)?+model:null,
+    scale,
+    modelDelta:start!==null&&hasNumberValue(model)?signedKg46(start,+model):null,
+    scaleDelta:start!==null&&scale!==null?signedKg46(start,scale):null,
+    scaleSource:scaleInfo.source
+  };
+}
+
+const _renderToday46=renderToday;
+renderToday=function(){
+  _renderToday46();
+  const hero=$('#todayCard .hero');
+  if(!hero)return;
+  const p=progressSinceStart46();
+  const goalHead=hero.querySelector('.goal-head');
+  if(!goalHead)return;
+
+  const old=hero.querySelector('.since-start-46');
+  if(old)old.remove();
+
+  const block=document.createElement('div');
+  block.className='since-start-46';
+  block.innerHTML=`
+    <div class="since-start-title46">
+      <div><span class="eyebrow">Fortschritt seit Start</span><strong>Was du wirklich geschafft hast</strong></div>
+      <span class="since-start-date46">Start ${db.plan.startDate?parseDate(db.plan.startDate).toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit'}):'–'}</span>
+    </div>
+    <div class="since-start-grid46">
+      <div class="since-start-item46 start">
+        <span>Startgewicht</span>
+        <strong>${p.start!==null?fmt(p.start,1)+' kg':'–'}</strong>
+        <small>Ausgangspunkt</small>
+      </div>
+      <div class="since-start-item46 model ${p.modelDelta!==null&&p.modelDelta<=0?'good':p.modelDelta!==null?'bad':''}">
+        <span>Nach Kalorien</span>
+        <strong>${signedKgText46(p.modelDelta)}</strong>
+        <small>${p.model!==null?fmt(p.model,1)+' kg aktuell':'Noch keine Berechnung'}</small>
+      </div>
+      <div class="since-start-item46 scale ${p.scaleDelta!==null&&p.scaleDelta<=0?'good':p.scaleDelta!==null?'bad':''}">
+        <span>Auf der Waage</span>
+        <strong>${signedKgText46(p.scaleDelta)}</strong>
+        <small>${p.scale!==null?fmt(p.scale,1)+' kg '+(p.scaleSource==='latest'?'letzter Eintrag':'aktuell'):'Noch kein Waagenwert'}</small>
+      </div>
+    </div>`;
+  goalHead.after(block);
+
+  const goalMeta=hero.querySelector('.goal-meta');
+  if(goalMeta&&p.modelDelta!==null){
+    const first=goalMeta.querySelector('span:first-child');
+    if(first)first.textContent=`${signedKgText46(p.modelDelta)} seit Start · ${first.textContent}`;
+  }
+  const scaleMeta=hero.querySelector('.scale-progress-meta');
+  if(scaleMeta&&p.scaleDelta!==null){
+    const first=scaleMeta.querySelector('span:first-child');
+    if(first)first.textContent=`${signedKgText46(p.scaleDelta)} seit Start`;
+  }
+}

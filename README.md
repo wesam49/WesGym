@@ -1,10 +1,8 @@
-# WesGym Goal 4.5
+# WesGym Goal 4.6
 
 Neu:
-- Kalorien im Verlauf: grün bis einschließlich +100 kcal über Plan, darüber rot.
-- Gym im Verlauf: erledigt grün, verpasst rot, heute/offen neutral.
-- Kalorien-Serie in Tagen.
-- Gym-Serie in vollständig absolvierten Wochen.
-- Trainingskalender mit Einzelterminen und wöchentlichen Serien.
-- Serientermine können einzeln oder ab einem gewählten Termin für alle zukünftigen Termine geändert/gelöscht werden.
-- Kalendertermine steuern auch die geplanten Gym-Tage in Prognosen und Defizitberechnungen.
+- Neuer, deutlich sichtbarer Bereich „Fortschritt seit Start“.
+- Zeigt Startgewicht, Veränderung nach Kalorienmodell und Veränderung auf der Waage.
+- Beide Fortschrittsbalken zeigen zusätzlich die kg-Veränderung seit dem Start.
+- Negative Veränderung (Gewichtsverlust) wird positiv/grün hervorgehoben, Gewichtszunahme rot.
+- Alle Funktionen aus 4.5 bleiben erhalten.
