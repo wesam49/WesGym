@@ -1,862 +1,469 @@
-const KEY='wesgym_simple_2_0';const defaults={plan:{startDate:'',startWeight:null,maintenanceCalories:2600,plannedCalories:1800,goalWeight:null},days:{}};let db=load();const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
-document.addEventListener('DOMContentLoaded',()=>{initNav();initActions();renderAll();if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{})});
-function clone(x){return JSON.parse(JSON.stringify(x))}function load(){try{const x=JSON.parse(localStorage.getItem(KEY));return x?{...clone(defaults),...x,plan:{...defaults.plan,...(x.plan||{})}}:clone(defaults)}catch{return clone(defaults)}}function save(){localStorage.setItem(KEY,JSON.stringify(db))}function dateKey(d=new Date()){return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}function parseDate(k){const[y,m,d]=k.split('-').map(Number);return new Date(y,m-1,d,12)}function fmt(v,d=0){return Number.isFinite(+v)?(+v).toLocaleString('de-DE',{minimumFractionDigits:d,maximumFractionDigits:d}):'–'}function num(id){const v=parseFloat($(id).value);return Number.isFinite(v)?v:null}function toast(t){const x=$('#toast');x.textContent=t;x.classList.remove('hidden');clearTimeout(x._t);x._t=setTimeout(()=>x.classList.add('hidden'),2200)}function openModal(h){$('#modalBody').innerHTML=h;$('#modal').classList.remove('hidden')}function closeModal(){$('#modal').classList.add('hidden')}
-function initNav(){$$('.bottom-nav button').forEach(b=>b.onclick=()=>openPage(b.dataset.page))}function openPage(n){$$('.page').forEach(p=>p.classList.toggle('active',p.id===n));$$('.bottom-nav button').forEach(b=>b.classList.toggle('active',b.dataset.page===n));$('#pageTitle').textContent={today:'Heute',history:'Verlauf',plan:'Plan'}[n];if(n==='today')renderToday();if(n==='history')renderHistory();if(n==='plan')renderPlan()}function initActions(){$('#todayForm').onsubmit=saveToday;$('#planForm').onsubmit=savePlan;$('#exportBtn').onclick=exportData;$('#importInput').onchange=importData;$('#resetBtn').onclick=()=>{if(confirm('Alle Daten wirklich löschen?')){localStorage.removeItem(KEY);location.reload()}};$$('[data-close]').forEach(x=>x.onclick=closeModal)}function renderAll(){$('#headerDate').textContent=new Date().toLocaleDateString('de-DE',{weekday:'long',day:'2-digit',month:'long'});renderToday();renderHistory();renderPlan()}
-function expectedWeight(k){const p=db.plan;if(!p.startDate||!Number.isFinite(+p.startWeight)||!Number.isFinite(+p.maintenanceCalories)||!Number.isFinite(+p.plannedCalories))return null;const days=Math.floor((parseDate(k)-parseDate(p.startDate))/86400000);if(days<0)return null;return +p.startWeight-((+p.maintenanceCalories-(+p.plannedCalories))*days/7700)}function actual(k){return db.days[k]||{date:k}}function statusFor(k){const a=actual(k).weight,p=expectedWeight(k);if(!Number.isFinite(+a)||!Number.isFinite(+p))return{className:'neutral',text:'Noch keine Daten'};const diff=+a-+p;if(Math.abs(diff)<=.15)return{className:'mid',text:'Im Plan'};if(diff<0)return{className:'good',text:`${fmt(Math.abs(diff),1)} kg vor dem Plan`};return{className:'bad',text:`${fmt(diff,1)} kg hinter dem Plan`}}
-function trendText(k){const end=parseDate(k),entries=[];for(let i=6;i>=0;i--){const d=new Date(end);d.setDate(d.getDate()-i);const dk=dateKey(d),w=actual(dk).weight;if(Number.isFinite(+w))entries.push({date:dk,weight:+w})}if(entries.length<2)return'Noch nicht verfügbar';const change=entries.at(-1).weight-entries[0].weight;if(Math.abs(change)<0.05)return'±0,0 kg';return`${change>0?'+':'−'}${fmt(Math.abs(change),1)} kg`}
-function planPrediction(days){const entries=Object.values(db.days).filter(d=>Number.isFinite(+d.weight)).sort((a,b)=>a.date.localeCompare(b.date)),latest=entries.at(-1),base=latest?.weight??db.plan.startWeight;if(!Number.isFinite(+base))return null;const deficit=(+db.plan.maintenanceCalories||0)-(+db.plan.plannedCalories||0);return +base-(deficit*days/7700)}
-function actualPrediction(days){const c=Object.values(db.days).filter(d=>Number.isFinite(+d.calories)&&+d.calories>0).sort((a,b)=>a.date.localeCompare(b.date)).slice(-7),w=Object.values(db.days).filter(d=>Number.isFinite(+d.weight)).sort((a,b)=>a.date.localeCompare(b.date)),base=w.at(-1)?.weight??db.plan.startWeight;if(!Number.isFinite(+base)||!c.length)return null;const avg=c.reduce((s,d)=>s+(+d.calories),0)/c.length,def=(+db.plan.maintenanceCalories||0)-avg;return +base-(def*days/7700)}
-function renderToday(){const k=dateKey(),a=actual(k),p=expectedWeight(k),s=statusFor(k),def=(+db.plan.maintenanceCalories||0)-(+db.plan.plannedCalories||0);$('#todayCard').innerHTML=`<section class="hero"><div class="hero-top"><div><div><span class="big-weight">${Number.isFinite(+a.weight)?fmt(a.weight,1):'–'}</span> <span class="unit">kg</span></div><div class="plan-status ${s.className}">${s.text}</div></div><div class="hero-side"><span>Soll heute</span><strong>${Number.isFinite(+p)?fmt(p,1)+' kg':'–'}</strong></div></div><div class="stat-grid"><div class="stat"><span>7-Tage-Trend</span><strong>${trendText(k)}</strong><small>in den letzten 7 Tagen</small></div><div class="stat"><span>Defizit geplant</span><strong>${fmt(def)} kcal</strong><small>pro Tag</small></div><div class="stat"><span>Plan in 30 Tagen</span><strong>${planPrediction(30)?fmt(planPrediction(30),1)+' kg':'–'}</strong></div><div class="stat"><span>Aktuelle Prognose</span><strong>${actualPrediction(30)?fmt(actualPrediction(30),1)+' kg':'–'}</strong><small>nach echten Kalorien</small></div></div></section>`;$('#todayWeight').value=a.weight??'';$('#todayCalories').value=a.calories??'';const strip=$('#recentDays');strip.innerHTML='';for(let i=-5;i<=1;i++){const d=new Date();d.setDate(d.getDate()+i);const dk=dateKey(d),st=statusFor(dk),day=actual(dk),plan=expectedWeight(dk),b=document.createElement('button');b.className=`day-mini ${st.className}`;b.innerHTML=`<span>${d.toLocaleDateString('de-DE',{weekday:'short',day:'2-digit',month:'2-digit'})}</span><strong>${Number.isFinite(+day.weight)?fmt(day.weight,1)+' kg':'–'}</strong><small>${Number.isFinite(+plan)?'Soll '+fmt(plan,1)+' kg':'Kein Plan'}</small>`;b.onclick=()=>editDay(dk);strip.appendChild(b)}}
-function saveToday(e){e.preventDefault();const k=dateKey();db.days[k]={...actual(k),date:k,weight:num('#todayWeight'),calories:num('#todayCalories')};save();renderAll();toast('Heute gespeichert')}
-function renderHistory(){const all=Object.values(db.days).sort((a,b)=>b.date.localeCompare(a.date));$('#historyList').innerHTML=all.length?all.map(d=>{const st=statusFor(d.date),plan=expectedWeight(d.date);return `<div class="history-card ${st.className}"><div class="history-top"><div><h3>${parseDate(d.date).toLocaleDateString('de-DE',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric'})}</h3><p>${Number.isFinite(+d.calories)?fmt(d.calories)+' kcal':'Keine Kalorien'}</p></div><span class="history-status ${st.className}">${st.text}</span></div><div class="history-values"><div><span>Soll</span><strong>${Number.isFinite(+plan)?fmt(plan,1)+' kg':'–'}</strong></div><div><span>Ist</span><strong>${Number.isFinite(+d.weight)?fmt(d.weight,1)+' kg':'–'}</strong></div></div><div class="history-actions"><button class="edit-btn" data-edit="${d.date}">Bearbeiten</button><button class="delete-btn" data-delete="${d.date}">Löschen</button></div></div>`}).join(''):'<p>Noch keine Einträge.</p>';$$('[data-edit]').forEach(b=>b.onclick=()=>editDay(b.dataset.edit));$$('[data-delete]').forEach(b=>b.onclick=()=>deleteDay(b.dataset.delete))}
-function editDay(k){const d=actual(k),plan=expectedWeight(k);openModal(`<h2>${parseDate(k).toLocaleDateString('de-DE',{weekday:'long',day:'2-digit',month:'long'})}</h2><p>Sollgewicht: ${Number.isFinite(+plan)?fmt(plan,1)+' kg':'–'}</p><form id="editDayForm" class="form"><label>Gewicht (kg)<input id="editWeight" type="number" step="0.1" value="${d.weight??''}"></label><label>Kalorien<input id="editCalories" type="number" value="${d.calories??''}"></label><button class="primary">Speichern</button></form>`);$('#editDayForm').onsubmit=e=>{e.preventDefault();db.days[k]={date:k,weight:num('#editWeight'),calories:num('#editCalories')};save();closeModal();renderAll();toast('Tag gespeichert')}}function deleteDay(k){if(!confirm('Diesen Tag wirklich löschen?'))return;delete db.days[k];save();renderAll();toast('Tag gelöscht')}
-function renderPlan(){const p=db.plan;$('#startDate').value=p.startDate||dateKey();$('#startWeight').value=p.startWeight??'';$('#maintenanceCalories').value=p.maintenanceCalories??'';$('#plannedCalories').value=p.plannedCalories??'';$('#goalWeight').value=p.goalWeight??'';const box=$('#planSummary');if(!Number.isFinite(+p.startWeight)||!p.startDate||!Number.isFinite(+p.maintenanceCalories)||!Number.isFinite(+p.plannedCalories)){box.innerHTML='<div class="summary-item"><span>Status</span><strong>Plan noch nicht vollständig</strong></div>';return}const def=+p.maintenanceCalories-+p.plannedCalories,weekly=def*7/7700;let goal='–';if(Number.isFinite(+p.goalWeight)&&def>0&&+p.goalWeight<+p.startWeight){const days=Math.ceil((+p.startWeight-+p.goalWeight)*7700/def),d=parseDate(p.startDate);d.setDate(d.getDate()+days);goal=d.toLocaleDateString('de-DE')}box.innerHTML=`<div class="summary-item"><span>Defizit pro Tag</span><strong>${fmt(def)} kcal</strong></div><div class="summary-item"><span>Tempo</span><strong>≈ ${fmt(weekly,2)} kg / Woche</strong></div><div class="summary-item"><span>Geplant in 30 Tagen</span><strong>${fmt(+p.startWeight-(def*30/7700),1)} kg</strong></div><div class="summary-item"><span>Zieltermin</span><strong>${goal}</strong></div>`}
-function savePlan(e){e.preventDefault();db.plan={startDate:$('#startDate').value,startWeight:num('#startWeight'),maintenanceCalories:num('#maintenanceCalories'),plannedCalories:num('#plannedCalories'),goalWeight:num('#goalWeight')};save();renderAll();toast('Plan gespeichert')}
-function exportData(){const b=new Blob([JSON.stringify(db,null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=`WesGym-Backup-${dateKey()}.json`;a.click();URL.revokeObjectURL(a.href)}function importData(e){const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{db=JSON.parse(r.result);save();location.reload()}catch{toast('Ungültige Datei')}};r.readAsText(f)}
-/* Goal-first update 3.0 */
-db.gym=db.gym||{weekdays:[],calories:300};
+(()=>{
+'use strict';
 
-function gymDay(k){return (db.gym.weekdays||[]).includes(parseDate(k).getDay())}
-function planDeficitFor(k){return ((+db.plan.maintenanceCalories||0)-(+db.plan.plannedCalories||0))+(gymDay(k)?(+db.gym.calories||0):0)}
-function goalDateOriginal(){
-  const p=db.plan;
-  if(!p.startDate||!Number.isFinite(+p.startWeight)||!Number.isFinite(+p.goalWeight)||+p.goalWeight>=+p.startWeight)return null;
-  let k=p.startDate,w=+p.startWeight,guard=0;
-  while(w>+p.goalWeight&&guard<2000){w-=planDeficitFor(k)/7700;const d=parseDate(k);d.setDate(d.getDate()+1);k=dateKey(d);guard++}
-  return guard<2000?k:null;
+const KEY='wesgym_simple_2_0';
+const defaults={
+  plan:{startDate:'',startWeight:null,maintenanceCalories:2600,plannedCalories:1800,goalWeight:null},
+  days:{},
+  gym:{calories:300,weekdays:[],series:[],skips:[]},
+  meta:{version:'5.0'}
+};
+let db=loadDb();
+let calendarCursor=startOfMonth(new Date());
+let selectedDate=dateKey();
+let chartRange='30';
+let forecastDays=30;
+
+const $=s=>document.querySelector(s);
+const $$=s=>[...document.querySelectorAll(s)];
+
+function clone(x){return JSON.parse(JSON.stringify(x))}
+function hasNum(v){return v!==null&&v!==undefined&&v!==''&&Number.isFinite(+v)}
+function validWeight(v){return hasNum(v)&&+v>0}
+function clamp(v,a,b){return Math.max(a,Math.min(b,v))}
+function fmt(v,d=0){return hasNum(v)?(+v).toLocaleString('de-DE',{minimumFractionDigits:d,maximumFractionDigits:d}):'–'}
+function signed(v,d=1,unit=''){if(!hasNum(v))return'–';if(Math.abs(+v)<.0001)return`±${fmt(0,d)}${unit}`;return`${+v>0?'+':'−'}${fmt(Math.abs(+v),d)}${unit}`}
+function dateKey(d=new Date()){return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
+function parseDate(k){if(!k)return new Date();const [y,m,d]=k.split('-').map(Number);return new Date(y,m-1,d,12)}
+function addDays(k,n){const d=parseDate(k);d.setDate(d.getDate()+n);return dateKey(d)}
+function daysBetween(a,b){return Math.round((parseDate(b)-parseDate(a))/86400000)}
+function startOfMonth(d){return new Date(d.getFullYear(),d.getMonth(),1,12)}
+function monday(k){const d=parseDate(k),wd=d.getDay()||7;d.setDate(d.getDate()-(wd-1));return dateKey(d)}
+function prevDay(k){return addDays(k,-1)}
+function formatDate(k,opt={day:'2-digit',month:'2-digit',year:'numeric'}){return parseDate(k).toLocaleDateString('de-DE',opt)}
+function num(id){const el=$(id);if(!el)return null;const v=parseFloat(el.value);return Number.isFinite(v)?v:null}
+function uid(){return `g${Date.now().toString(36)}${Math.random().toString(36).slice(2,7)}`}
+function actual(k){return db.days[k]||{date:k}}
+function toast(msg){const t=$('#toast');t.textContent=msg;t.classList.remove('hidden');clearTimeout(t._timer);t._timer=setTimeout(()=>t.classList.add('hidden'),2200)}
+function openModal(html){$('#modalBody').innerHTML=html;$('#modal').classList.remove('hidden')}
+function closeModal(){$('#modal').classList.add('hidden')}
+
+function loadDb(){
+  let raw=null;
+  try{raw=JSON.parse(localStorage.getItem(KEY)||'null')}catch{}
+  const x=raw&&typeof raw==='object'?raw:{};
+  const out={...clone(defaults),...x,plan:{...defaults.plan,...(x.plan||{})},days:{...(x.days||{})},gym:{...defaults.gym,...(x.gym||{})},meta:{...defaults.meta,...(x.meta||{})}};
+  out.gym.series=Array.isArray(out.gym.series)?out.gym.series:[];
+  out.gym.skips=Array.isArray(out.gym.skips)?out.gym.skips:[];
+  out.gym.weekdays=Array.isArray(out.gym.weekdays)?out.gym.weekdays:[];
+  migrateOldWeekdays(out);
+  Object.keys(out.days).forEach(k=>{out.days[k]={date:k,...out.days[k]}});
+  return out;
 }
-function accumulatedDeviation(){
-  const p=db.plan;if(!p.startDate)return 0;let total=0;
-  Object.values(db.days).forEach(d=>{
-    if(d.date<p.startDate||d.date>dateKey())return;
-    if(Number.isFinite(+d.calories))total+=(+d.calories-(+p.plannedCalories||0));
-    if(gymDay(d.date)&&d.gymDone!==true)total+=(+db.gym.calories||0);
+function migrateOldWeekdays(out){
+  if(out.gym.series.length||!out.gym.weekdays.length)return;
+  const base=out.plan.startDate||dateKey();
+  out.gym.weekdays.forEach(w=>{
+    let k=base,guard=0;
+    while(parseDate(k).getDay()!==+w&&guard<8){k=addDays(k,1);guard++}
+    out.gym.series.push({id:uid(),type:'weekly',start:k,end:null,weekday:+w,name:'Training',time:'18:00',calories:+out.gym.calories||300});
   });
-  return total;
+  out.gym.weekdays=[];
 }
-function avgPlannedDeficit(){
-  const base=(+db.plan.maintenanceCalories||0)-(+db.plan.plannedCalories||0);
-  return base+((db.gym.weekdays||[]).length*(+db.gym.calories||0)/7);
-}
-function goalDateCurrent(){
-  const orig=goalDateOriginal();if(!orig)return null;
-  const avg=avgPlannedDeficit();if(avg<=0)return orig;
-  const shift=Math.round(accumulatedDeviation()/avg);
-  const d=parseDate(orig);d.setDate(d.getDate()+shift);return dateKey(d);
-}
-function dayShift(){const a=goalDateOriginal(),b=goalDateCurrent();if(!a||!b)return null;return Math.round((parseDate(b)-parseDate(a))/86400000)}
-function latestKnownWeight(){const arr=Object.values(db.days).filter(d=>Number.isFinite(+d.weight)).sort((a,b)=>a.date.localeCompare(b.date));return arr.at(-1)?.weight??db.plan.startWeight}
-function goalProgress(){const s=+db.plan.startWeight,g=+db.plan.goalWeight,c=+latestKnownWeight();if(!Number.isFinite(s)||!Number.isFinite(g)||!Number.isFinite(c)||s===g)return 0;return Math.max(0,Math.min(100,(s-c)/(s-g)*100))}
-function todayCalorieImpact(){
-  const d=actual(dateKey()),planned=+db.plan.plannedCalories||0;
-  const cal=Number.isFinite(+d.calories)?+d.calories-planned:0;
-  const missed=gymDay(dateKey())&&d.gymDone!==true?(+db.gym.calories||0):0;
-  return{cal,missed,total:cal+missed};
-}
-function expectedWeight(k){
-  const p=db.plan;if(!p.startDate||!Number.isFinite(+p.startWeight)||parseDate(k)<parseDate(p.startDate))return null;
-  let cur=p.startDate,w=+p.startWeight,guard=0;
-  while(cur<k&&guard<2000){w-=planDeficitFor(cur)/7700;const d=parseDate(cur);d.setDate(d.getDate()+1);cur=dateKey(d);guard++}
-  return w;
-}
-function renderToday(){
-  const k=dateKey(),a=actual(k),p=expectedWeight(k),st=statusFor(k),orig=goalDateOriginal(),cur=goalDateCurrent(),shift=dayShift(),prog=goalProgress(),cw=latestKnownWeight(),remaining=Number.isFinite(+cw)&&Number.isFinite(+db.plan.goalWeight)?Math.max(0,+cw-(+db.plan.goalWeight)):null,impact=todayCalorieImpact();
-  $('#todayCard').innerHTML=`<section class="hero"><div class="goal-head"><div><span class="eyebrow">Aktuelles Gewicht</span><div><span class="big-weight">${Number.isFinite(+a.weight)?fmt(a.weight,1):fmt(cw,1)}</span> <span class="unit">kg</span></div><div class="plan-status ${st.className}">${st.text}</div></div><div class="hero-side"><span>Ziel</span><strong>${Number.isFinite(+db.plan.goalWeight)?fmt(db.plan.goalWeight,1)+' kg':'–'}</strong></div></div><div class="goal-progress"><i style="width:${prog}%"></i></div><div class="goal-meta"><span>${fmt(prog)} % geschafft</span><span>${Number.isFinite(+remaining)?fmt(remaining,1)+' kg übrig':'–'}</span></div><div class="goal-dates"><div class="goal-date"><span>Geplanter Zieltermin</span><strong>${orig?parseDate(orig).toLocaleDateString('de-DE'):'–'}</strong></div><div class="goal-date"><span>Aktueller Zieltermin</span><strong>${cur?parseDate(cur).toLocaleDateString('de-DE'):'–'}</strong></div></div><div class="date-shift ${shift===null?'neutral':shift>0?'bad':shift<0?'good':'mid'}">${shift===null?'Noch kein Vergleich':shift>0?`+${shift} Tage später`:shift<0?`${Math.abs(shift)} Tage früher`:'Zieltermin unverändert'}</div><div class="impact-box"><div class="impact ${impact.cal>100?'bad':impact.cal<-100?'good':'mid'}"><span>Essen heute</span><strong>${impact.cal>0?'+':''}${fmt(impact.cal)} kcal</strong><small>gegenüber deinem Plan</small></div><div class="impact ${impact.missed>0?'bad':'good'}"><span>Training heute</span><strong>${gymDay(k)?(a.gymDone===true?'Erledigt':'Noch offen'):'Kein Gym geplant'}</strong><small>${gymDay(k)?`Planwert ${fmt(db.gym.calories)} kcal`:''}</small></div></div><div class="mini-status">Sollgewicht heute: ${Number.isFinite(+p)?fmt(p,1)+' kg':'–'}</div></section>`;
-  $('#todayWeight').value=a.weight??'';$('#todayCalories').value=a.calories??'';
-  const gw=$('#gymTodayWrap');gw.classList.toggle('hidden',!gymDay(k));if(gymDay(k)){ $('#gymBurnLabel').textContent=`ca. ${fmt(db.gym.calories)} kcal im Plan`;$('#gymDone').checked=a.gymDone===true}
-  const strip=$('#recentDays');strip.innerHTML='';
-  for(let i=-5;i<=1;i++){const d=new Date();d.setDate(d.getDate()+i);const dk=dateKey(d),x=actual(dk),ss=statusFor(dk),b=document.createElement('button');b.className=`day-mini ${ss.className}`;b.innerHTML=`<span>${d.toLocaleDateString('de-DE',{weekday:'short',day:'2-digit',month:'2-digit'})}${gymDay(dk)?(x.gymDone===true?' · Gym ✓':' · Gym'):''}</span><strong>${Number.isFinite(+x.weight)?fmt(x.weight,1)+' kg':'–'}</strong><small>${ss.text}</small>`;b.onclick=()=>editDay(dk);strip.appendChild(b)}
-}
-function saveToday(e){e.preventDefault();const k=dateKey();db.days[k]={...actual(k),date:k,weight:num('#todayWeight'),calories:num('#todayCalories'),gymDone:gymDay(k)?$('#gymDone').checked:null};save();renderAll();toast('Tag gespeichert')}
-function renderPlan(){
-  const p=db.plan;$('#startDate').value=p.startDate||dateKey();$('#startWeight').value=p.startWeight??'';$('#maintenanceCalories').value=p.maintenanceCalories??'';$('#plannedCalories').value=p.plannedCalories??'';$('#goalWeight').value=p.goalWeight??'';
-  $('#gymCalories').value=db.gym.calories??300;
-  $('#weekdayPicker').innerHTML=['So','Mo','Di','Mi','Do','Fr','Sa'].map((n,i)=>`<button type="button" class="weekday-btn ${(db.gym.weekdays||[]).includes(i)?'active':''}" data-gym-day="${i}">${n}</button>`).join('');
-  $$('[data-gym-day]').forEach(b=>b.onclick=()=>b.classList.toggle('active'));
-  renderPlanSummary();
-}
-function renderPlanSummary(){
-  const box=$('#planSummary'),orig=goalDateOriginal(),cur=goalDateCurrent(),shift=dayShift(),base=(+db.plan.maintenanceCalories||0)-(+db.plan.plannedCalories||0),gymAvg=(db.gym.weekdays||[]).length*(+db.gym.calories||0)/7;
-  box.innerHTML=`<div class="summary-item"><span>Basisdefizit</span><strong>${fmt(base)} kcal / Tag</strong></div><div class="summary-item"><span>Gym im Wochenschnitt</span><strong>+${fmt(gymAvg)} kcal / Tag</strong></div><div class="summary-item"><span>Geplanter Zieltermin</span><strong>${orig?parseDate(orig).toLocaleDateString('de-DE'):'–'}</strong></div><div class="summary-item"><span>Aktueller Zieltermin</span><strong>${cur?parseDate(cur).toLocaleDateString('de-DE'):'–'}</strong></div><div class="summary-item"><span>Abweichung</span><strong>${shift===null?'–':shift>0?`+${shift} Tage`:shift<0?`${Math.abs(shift)} Tage früher`:'Im Plan'}</strong></div>`;
-}
-function saveGymPlan(){db.gym.weekdays=$$('[data-gym-day].active').map(b=>+b.dataset.gymDay);db.gym.calories=num('#gymCalories')||0;save();renderAll();toast('Trainingstage gespeichert')}
+function save(){db.meta.version='5.0';localStorage.setItem(KEY,JSON.stringify(db))}
 
-document.addEventListener('DOMContentLoaded',()=>{$('#saveGymPlan')?.addEventListener('click',saveGymPlan)});
-
-
-/* Goal 4.0 — theoretical calorie-derived weight */
-function calorieModelWeight(k=dateKey()){
-  const p=db.plan;
-  if(!p.startDate||!Number.isFinite(+p.startWeight)||parseDate(k)<parseDate(p.startDate))return null;
-  let cur=p.startDate, energyDeficit=0, guard=0;
-  while(cur<=k&&guard<2500){
-    const d=actual(cur);
-    const eaten=Number.isFinite(+d.calories)?+d.calories:(+p.plannedCalories||0);
-    const gymBurn=gymDay(cur)&&d.gymDone===true?(+db.gym.calories||0):0;
-    energyDeficit+=(+p.maintenanceCalories||0)-eaten+gymBurn;
-    const next=parseDate(cur);next.setDate(next.getDate()+1);cur=dateKey(next);guard++;
-  }
-  return +p.startWeight-energyDeficit/7700;
-}
-function calorieModelStats(k=dateKey()){
-  const p=db.plan;
-  if(!p.startDate)return{logged:0,missing:0,total:0};
-  let cur=p.startDate,logged=0,missing=0,total=0,guard=0;
-  while(cur<=k&&guard<2500){
-    total++;
-    if(Number.isFinite(+actual(cur).calories))logged++;else missing++;
-    const next=parseDate(cur);next.setDate(next.getDate()+1);cur=dateKey(next);guard++;
-  }
-  return{logged,missing,total};
-}
-function calorieVsPlanStatus(k=dateKey()){
-  const c=calorieModelWeight(k),p=expectedWeight(k);
-  if(!Number.isFinite(+c)||!Number.isFinite(+p))return{className:'neutral',text:'Noch keine Berechnung',diff:null};
-  const diff=+c-+p;
-  if(Math.abs(diff)<=.05)return{className:'mid',text:'Kalorienmodell genau im Plan',diff};
-  if(diff<0)return{className:'good',text:`Kalorienmodell ${fmt(Math.abs(diff),1)} kg vor dem Plan`,diff};
-  return{className:'bad',text:`Kalorienmodell ${fmt(diff,1)} kg hinter dem Plan`,diff};
-}
-function scaleVsCalorieText(k=dateKey()){
-  const scale=actual(k).weight,model=calorieModelWeight(k);
-  if(!Number.isFinite(+scale)||!Number.isFinite(+model))return'Differenz noch nicht verfügbar';
-  const diff=+scale-+model;
-  if(Math.abs(diff)<.05)return'Waage und Kalorienmodell liegen gleich';
-  return`Waage ${diff>0?fmt(diff,1)+' kg höher':fmt(Math.abs(diff),1)+' kg niedriger'} als das Kalorienmodell`;
-}
-function calorieProgress(){
-  const s=+db.plan.startWeight,g=+db.plan.goalWeight,c=+calorieModelWeight(dateKey());
-  if(!Number.isFinite(s)||!Number.isFinite(g)||!Number.isFinite(c)||s===g)return 0;
-  return Math.max(0,Math.min(100,(s-c)/(s-g)*100));
-}
-
-renderToday=function(){
-  const k=dateKey(),a=actual(k),planW=expectedWeight(k),scaleStatus=statusFor(k),
-        orig=goalDateOriginal(),cur=goalDateCurrent(),shift=dayShift(),
-        modelW=calorieModelWeight(k),modelStatus=calorieVsPlanStatus(k),
-        prog=calorieProgress(),remaining=Number.isFinite(+modelW)&&Number.isFinite(+db.plan.goalWeight)?Math.max(0,+modelW-(+db.plan.goalWeight)):null,
-        impact=todayCalorieImpact(),coverage=calorieModelStats(k);
-
-  $('#todayCard').innerHTML=`<section class="hero">
-    <div class="goal-head">
-      <div>
-        <span class="eyebrow">Kaloriengewicht · theoretisch</span>
-        <div><span class="big-weight">${Number.isFinite(+modelW)?fmt(modelW,1):'–'}</span> <span class="unit">kg</span></div>
-        <div class="plan-status ${modelStatus.className}">${modelStatus.text}</div>
-      </div>
-      <div class="hero-side"><span>Ziel</span><strong>${Number.isFinite(+db.plan.goalWeight)?fmt(db.plan.goalWeight,1)+' kg':'–'}</strong></div>
-    </div>
-
-    <div class="goal-progress"><i style="width:${prog}%"></i></div>
-    <div class="goal-meta"><span>${fmt(prog)} % theoretisch geschafft</span><span>${Number.isFinite(+remaining)?fmt(remaining,1)+' kg bis Ziel':'–'}</span></div>
-
-    <div class="weight-trio">
-      <div class="weight-tile plan"><span>Soll laut Plan</span><strong>${Number.isFinite(+planW)?fmt(planW,1)+' kg':'–'}</strong><small>bei geplanten Kalorien</small></div>
-      <div class="weight-tile model"><span>Nach Kalorien</span><strong>${Number.isFinite(+modelW)?fmt(modelW,1)+' kg':'–'}</strong><small>Energiebilanz-Modell</small></div>
-      <div class="weight-tile scale"><span>Waage</span><strong>${Number.isFinite(+a.weight)?fmt(a.weight,1)+' kg':'–'}</strong><small>${scaleVsCalorieText(k)}</small></div>
-    </div>
-
-    <div class="goal-dates">
-      <div class="goal-date"><span>Geplanter Zieltermin</span><strong>${orig?parseDate(orig).toLocaleDateString('de-DE'):'–'}</strong></div>
-      <div class="goal-date"><span>Aktueller Zieltermin</span><strong>${cur?parseDate(cur).toLocaleDateString('de-DE'):'–'}</strong></div>
-    </div>
-    <div class="date-shift ${shift===null?'neutral':shift>0?'bad':shift<0?'good':'mid'}">${shift===null?'Noch kein Vergleich':shift>0?`+${shift} Tage später`:shift<0?`${Math.abs(shift)} Tage früher`:'Zieltermin unverändert'}</div>
-
-    <div class="impact-box">
-      <div class="impact ${impact.cal>100?'bad':impact.cal<-100?'good':'mid'}"><span>Essen heute</span><strong>${impact.cal>0?'+':''}${fmt(impact.cal)} kcal</strong><small>gegenüber deinem Plan</small></div>
-      <div class="impact ${impact.missed>0?'bad':'good'}"><span>Training heute</span><strong>${gymDay(k)?(a.gymDone===true?'Erledigt':'Noch offen'):'Kein Gym geplant'}</strong><small>${gymDay(k)?`Planwert ${fmt(db.gym.calories)} kcal`:''}</small></div>
-    </div>
-
-    <div class="model-note">
-      <b>${scaleVsCalorieText(k)}</b>
-      <span>Das Kaloriengewicht ist ein theoretisches Energiebilanz-Modell. Die Waage kann durch Wasser, Salz, Glykogen und Magen-/Darminhalt abweichen.</span>
-      <small>${coverage.logged} von ${coverage.total} Tagen mit echten Kalorienwerten${coverage.missing?` · ${coverage.missing} fehlende Tage wurden mit Plan-Kalorien gerechnet`:''}</small>
-    </div>
-  </section>`;
-
-  $('#todayWeight').value=a.weight??'';
-  $('#todayCalories').value=a.calories??'';
-
-  const gw=$('#gymTodayWrap');
-  gw.classList.toggle('hidden',!gymDay(k));
-  if(gymDay(k)){
-    $('#gymBurnLabel').textContent=`ca. ${fmt(db.gym.calories)} kcal im Plan`;
-    $('#gymDone').checked=a.gymDone===true;
-  }
-
-  const strip=$('#recentDays');strip.innerHTML='';
-  for(let i=-5;i<=1;i++){
-    const d=new Date();d.setDate(d.getDate()+i);
-    const dk=dateKey(d),x=actual(dk),ss=statusFor(dk),cm=calorieModelWeight(dk),b=document.createElement('button');
-    b.className=`day-mini ${ss.className}`;
-    b.innerHTML=`<span>${d.toLocaleDateString('de-DE',{weekday:'short',day:'2-digit',month:'2-digit'})}${gymDay(dk)?(x.gymDone===true?' · Gym ✓':' · Gym'):''}</span><strong>${Number.isFinite(+cm)?fmt(cm,1)+' kg':'–'}</strong><small>Kaloriengewicht · Waage ${Number.isFinite(+x.weight)?fmt(x.weight,1):'–'}</small>`;
-    b.onclick=()=>editDay(dk);
-    strip.appendChild(b);
-  }
-};
-
-renderHistory=function(){
-  const all=Object.values(db.days).sort((a,b)=>b.date.localeCompare(a.date));
-  $('#historyList').innerHTML=all.length?all.map(d=>{
-    const st=statusFor(d.date),plan=expectedWeight(d.date),model=calorieModelWeight(d.date),gym=gymDay(d.date);
-    return `<div class="history-card ${st.className}">
-      <div class="history-top"><div><h3>${parseDate(d.date).toLocaleDateString('de-DE',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric'})}</h3><p>${Number.isFinite(+d.calories)?fmt(d.calories)+' kcal':'Keine Kalorien'}${gym?` · Gym ${d.gymDone===true?'✓':'✕'}`:''}</p></div><span class="history-status ${st.className}">${st.text}</span></div>
-      <div class="history-values history-three">
-        <div><span>Soll</span><strong>${Number.isFinite(+plan)?fmt(plan,1)+' kg':'–'}</strong></div>
-        <div><span>Kaloriengewicht</span><strong>${Number.isFinite(+model)?fmt(model,1)+' kg':'–'}</strong></div>
-        <div><span>Waage</span><strong>${Number.isFinite(+d.weight)?fmt(d.weight,1)+' kg':'–'}</strong></div>
-      </div>
-      <div class="history-actions"><button class="edit-btn" data-edit="${d.date}">Bearbeiten</button><button class="delete-btn" data-delete="${d.date}">Löschen</button></div>
-    </div>`;
-  }).join(''):'<p>Noch keine Einträge.</p>';
-  $$('[data-edit]').forEach(b=>b.onclick=()=>editDay(b.dataset.edit));
-  $$('[data-delete]').forEach(b=>b.onclick=()=>deleteDay(b.dataset.delete));
-};
-
-
-/* Goal 4.1 — dynamic time progress */
-function totalDaysBetween(a,b){
-  if(!a||!b)return null;
-  return Math.max(0,Math.round((parseDate(b)-parseDate(a))/86400000));
-}
-function elapsedPlanDays(){
-  const s=db.plan.startDate;
-  if(!s)return null;
-  return Math.max(0,totalDaysBetween(s,dateKey()));
-}
-function dynamicTimeProgress(){
-  const s=db.plan.startDate, currentTarget=goalDateCurrent();
-  if(!s||!currentTarget)return{pct:0,elapsed:null,total:null,remaining:null};
-  const elapsed=Math.max(0,totalDaysBetween(s,dateKey()));
-  const total=Math.max(1,totalDaysBetween(s,currentTarget));
-  const remaining=Math.max(0,totalDaysBetween(dateKey(),currentTarget));
-  const pct=Math.max(0,Math.min(100,(elapsed/total)*100));
-  return{pct,elapsed,total,remaining};
-}
-function plannedTimeProgress(){
-  const s=db.plan.startDate, plannedTarget=goalDateOriginal();
-  if(!s||!plannedTarget)return{pct:0,elapsed:null,total:null,remaining:null};
-  const elapsed=Math.max(0,totalDaysBetween(s,dateKey()));
-  const total=Math.max(1,totalDaysBetween(s,plannedTarget));
-  const remaining=Math.max(0,totalDaysBetween(dateKey(),plannedTarget));
-  const pct=Math.max(0,Math.min(100,(elapsed/total)*100));
-  return{pct,elapsed,total,remaining};
-}
-
-/* Wrap the existing renderToday to add time-progress visualization */
-const _renderToday_40 = renderToday;
-renderToday=function(){
-  _renderToday_40();
-
-  const hero=$('#todayCard .hero');
-  if(!hero)return;
-
-  const currentTP=dynamicTimeProgress();
-  const plannedTP=plannedTimeProgress();
-  const shift=dayShift();
-
-  const timeBlock=document.createElement('div');
-  timeBlock.className='time-progress-block';
-  timeBlock.innerHTML=`
-    <div class="time-progress-head">
-      <div>
-        <span class="eyebrow">Zeitfortschritt bis zum Ziel</span>
-        <strong>${currentTP.remaining===null?'–':currentTP.remaining+' Tage übrig'}</strong>
-      </div>
-      <span class="time-percent">${fmt(currentTP.pct)} %</span>
-    </div>
-    <div class="time-progress-track"><i style="width:${currentTP.pct}%"></i></div>
-    <div class="time-progress-meta">
-      <span>${currentTP.elapsed===null?'–':currentTP.elapsed+' Tage geschafft'}</span>
-      <span>${currentTP.total===null?'–':currentTP.total+' Tage Gesamtstrecke'}</span>
-    </div>
-    <div class="time-compare-grid">
-      <div class="time-mini">
-        <span>Originaler Plan</span>
-        <strong>${plannedTP.remaining===null?'–':plannedTP.remaining+' Tage'}</strong>
-        <small>${fmt(plannedTP.pct)} % Zeitfortschritt</small>
-      </div>
-      <div class="time-mini current ${shift>0?'bad':shift<0?'good':'mid'}">
-        <span>Aktuelle Prognose</span>
-        <strong>${currentTP.remaining===null?'–':currentTP.remaining+' Tage'}</strong>
-        <small>${shift===null?'Noch kein Vergleich':shift>0?`+${shift} Tage später`:shift<0?`${Math.abs(shift)} Tage früher`:'Im Zeitplan'}</small>
-      </div>
-    </div>
-    <p class="time-explain">Dieser Fortschritt reagiert auf deine echte Kalorienbilanz und den aktuellen prognostizierten Zieltermin. Wenn sich dein Zieltermin nach hinten verschiebt, kann die Prozentzahl sinken; wenn du Zeit aufholst, steigt sie schneller.</p>
-  `;
-
-  const goalDates=hero.querySelector('.goal-dates');
-  if(goalDates) goalDates.before(timeBlock);
-  else hero.appendChild(timeBlock);
-};
-
-
-/* Goal 4.2 — add practical scale progress line */
-function actualScaleWeightForProgress(){
-  const todayW = actual(dateKey()).weight;
-  if(Number.isFinite(+todayW)) return +todayW;
-  const arr = Object.values(db.days).filter(d=>Number.isFinite(+d.weight)).sort((a,b)=>a.date.localeCompare(b.date));
-  return Number.isFinite(+arr.at(-1)?.weight) ? +arr.at(-1).weight : null;
-}
-function actualScaleProgress(){
-  const s=+db.plan.startWeight,g=+db.plan.goalWeight,w=actualScaleWeightForProgress();
-  if(!Number.isFinite(s)||!Number.isFinite(g)||!Number.isFinite(w)||s===g){
-    return {pct:0,lost:null,total:null,remaining:null,weight:null};
-  }
-  const lost = s - w;
-  const total = s - g;
-  const remaining = Math.max(0, w - g);
-  const pct = Math.max(0, Math.min(100, (lost/total)*100));
-  return {pct,lost,total,remaining,weight:w};
-}
-
-const _renderToday_41 = renderToday;
-renderToday = function(){
-  _renderToday_41();
-
-  const hero = $('#todayCard .hero');
-  if(!hero) return;
-
-  const scale = actualScaleProgress();
-  const goalMeta = hero.querySelector('.goal-meta');
-  if(!goalMeta) return;
-
-  const block = document.createElement('div');
-  block.className = 'scale-progress-block';
-  block.innerHTML = `
-    <div class="scale-progress-head">
-      <div>
-        <span class="eyebrow">Fortschritt laut Waage</span>
-        <strong>${Number.isFinite(+scale.weight) ? fmt(scale.weight,1)+' kg aktuell' : 'Noch kein Waagenwert'}</strong>
-      </div>
-      <span class="scale-percent">${fmt(scale.pct)} %</span>
-    </div>
-    <div class="scale-progress-track"><i style="width:${scale.pct}%"></i></div>
-    <div class="scale-progress-meta">
-      <span>${scale.lost===null ? '–' : fmt(scale.lost,1)+' kg geschafft'}</span>
-      <span>${scale.remaining===null ? '–' : fmt(scale.remaining,1)+' kg bis Ziel'}</span>
-    </div>
-  `;
-
-  const existing = hero.querySelector('.scale-progress-block');
-  if(existing) existing.remove();
-  goalMeta.after(block);
-};
-
-
-/* Goal 4.3 — fix null/empty weight handling for scale progress */
-function hasNumberValue(v){return v!==null&&v!==undefined&&v!==''&&Number.isFinite(+v)}
-function hasValidWeight(v){return hasNumberValue(v)&&+v>0}
-function latestLoggedWeight(limitKey=dateKey()){
-  const arr=Object.values(db.days)
-    .filter(d=>d.date<=limitKey&&hasValidWeight(d.weight))
-    .sort((a,b)=>a.date.localeCompare(b.date));
-  return arr.length?+arr.at(-1).weight:null;
-}
-function scaleDisplayInfo(k=dateKey()){
-  const todayW=actual(k).weight;
-  if(hasValidWeight(todayW)) return {weight:+todayW,source:'today'};
-  const prev=latestLoggedWeight(k);
-  if(hasValidWeight(prev)) return {weight:+prev,source:'latest'};
-  return {weight:null,source:'none'};
-}
-statusFor=function(k){
-  const a=actual(k).weight,p=expectedWeight(k);
-  if(!hasValidWeight(a)||!hasNumberValue(p))return{className:'neutral',text:'Noch keine Daten'};
-  const diff=+a-+p;
-  if(Math.abs(diff)<=.15)return{className:'mid',text:'Im Plan'};
-  if(diff<0)return{className:'good',text:`${fmt(Math.abs(diff),1)} kg vor dem Plan`};
-  return{className:'bad',text:`${fmt(diff,1)} kg hinter dem Plan`};
-}
-actualScaleWeightForProgress=function(limitKey=dateKey()){
-  return scaleDisplayInfo(limitKey).weight;
-}
-actualScaleProgress=function(){
-  const s=+db.plan.startWeight,g=+db.plan.goalWeight,w=actualScaleWeightForProgress(dateKey());
-  if(!hasNumberValue(s)||!hasNumberValue(g)||!hasValidWeight(w)||s===g){
-    return {pct:0,lost:null,total:null,remaining:null,weight:null};
-  }
-  const lost=s-w,total=s-g,remaining=Math.max(0,w-g),pct=Math.max(0,Math.min(100,(lost/total)*100));
-  return {pct,lost,total,remaining,weight:w};
-}
-scaleVsCalorieText=function(k=dateKey()){
-  const info=scaleDisplayInfo(k),scale=info.weight,model=calorieModelWeight(k);
-  if(!hasValidWeight(scale)||!hasNumberValue(model))return'Noch kein Waagenwert verfügbar';
-  const diff=scale-model;
-  const prefix=info.source==='latest'?'Letzte Waage ':'Waage ';
-  if(Math.abs(diff)<0.05)return `${prefix}und Kalorienmodell liegen gleich`;
-  return `${prefix}${diff>0?fmt(diff,1)+' kg höher':fmt(Math.abs(diff),1)+' kg niedriger'} als das Kalorienmodell`;
-}
-renderHistory=function(){
-  const all=Object.values(db.days).sort((a,b)=>b.date.localeCompare(a.date));
-  $('#historyList').innerHTML=all.length?all.map(d=>{
-    const st=statusFor(d.date),plan=expectedWeight(d.date),model=calorieModelWeight(d.date),gym=gymDay(d.date);
-    return `<div class="history-card ${st.className}"><div class="history-top"><div><h3>${parseDate(d.date).toLocaleDateString('de-DE',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric'})}</h3><p>${hasNumberValue(d.calories)?fmt(d.calories)+' kcal':'Keine Kalorien'}${gym?` · Gym ${d.gymDone===true?'✓':'✕'}`:''}</p></div><span class="history-status ${st.className}">${st.text}</span></div><div class="history-values history-three"><div><span>Soll</span><strong>${hasNumberValue(plan)?fmt(plan,1)+' kg':'–'}</strong></div><div><span>Kaloriengewicht</span><strong>${hasNumberValue(model)?fmt(model,1)+' kg':'–'}</strong></div><div><span>Waage</span><strong>${hasValidWeight(d.weight)?fmt(d.weight,1)+' kg':'–'}</strong></div></div><div class="history-actions"><button class="edit-btn" data-edit="${d.date}">Bearbeiten</button><button class="delete-btn" data-delete="${d.date}">Löschen</button></div></div>`;
-  }).join(''):'<p>Noch keine Einträge.</p>';
-  $$('[data-edit]').forEach(b=>b.onclick=()=>editDay(b.dataset.edit));
-  $$('[data-delete]').forEach(b=>b.onclick=()=>deleteDay(b.dataset.delete));
-}
-renderToday=function(){
-  const k=dateKey(),a=actual(k),planW=expectedWeight(k),orig=goalDateOriginal(),cur=goalDateCurrent(),shift=dayShift(),
-        modelW=calorieModelWeight(k),modelStatus=calorieVsPlanStatus(k),prog=calorieProgress(),
-        remaining=hasNumberValue(modelW)&&hasNumberValue(db.plan.goalWeight)?Math.max(0,+modelW-(+db.plan.goalWeight)):null,
-        impact=todayCalorieImpact(),coverage=calorieModelStats(k),scale=actualScaleProgress(),scaleInfo=scaleDisplayInfo(k),
-        currentTP=dynamicTimeProgress(),plannedTP=plannedTimeProgress();
-
-  $('#todayCard').innerHTML=`<section class="hero">
-    <div class="goal-head">
-      <div>
-        <span class="eyebrow">Kaloriengewicht · theoretisch</span>
-        <div><span class="big-weight">${hasNumberValue(modelW)?fmt(modelW,1):'–'}</span> <span class="unit">kg</span></div>
-        <div class="plan-status ${modelStatus.className}">${modelStatus.text}</div>
-      </div>
-      <div class="hero-side"><span>Ziel</span><strong>${hasNumberValue(db.plan.goalWeight)?fmt(db.plan.goalWeight,1)+' kg':'–'}</strong></div>
-    </div>
-
-    <div class="goal-progress"><i style="width:${prog}%"></i></div>
-    <div class="goal-meta"><span>${fmt(prog)} % theoretisch geschafft</span><span>${hasNumberValue(remaining)?fmt(remaining,1)+' kg bis Ziel':'–'}</span></div>
-
-    <div class="scale-progress-block">
-      <div class="scale-progress-head">
-        <div>
-          <span class="eyebrow">Fortschritt laut Waage</span>
-          <strong>${hasValidWeight(scale.weight)?fmt(scale.weight,1)+' kg aktuell':(scaleInfo.source==='latest'&&hasValidWeight(scale.weight)?fmt(scale.weight,1)+' kg letzter Eintrag':'Noch kein Waagenwert')}</strong>
-        </div>
-        <span class="scale-percent">${hasValidWeight(scale.weight)?fmt(scale.pct):'–'}${hasValidWeight(scale.weight)?' %':''}</span>
-      </div>
-      <div class="scale-progress-track"><i style="width:${hasValidWeight(scale.weight)?scale.pct:0}%"></i></div>
-      <div class="scale-progress-meta">
-        <span>${scale.lost===null ? '–' : fmt(scale.lost,1)+' kg geschafft'}</span>
-        <span>${scale.remaining===null ? '–' : fmt(scale.remaining,1)+' kg bis Ziel'}</span>
-      </div>
-    </div>
-
-    <div class="weight-trio">
-      <div class="weight-tile plan"><span>Soll laut Plan</span><strong>${hasNumberValue(planW)?fmt(planW,1)+' kg':'–'}</strong><small>bei geplanten Kalorien</small></div>
-      <div class="weight-tile model"><span>Nach Kalorien</span><strong>${hasNumberValue(modelW)?fmt(modelW,1)+' kg':'–'}</strong><small>Energiebilanz-Modell</small></div>
-      <div class="weight-tile scale"><span>Waage</span><strong>${hasValidWeight(scaleInfo.weight)?fmt(scaleInfo.weight,1)+' kg':'–'}</strong><small>${scaleInfo.source==='latest'&&hasValidWeight(scaleInfo.weight)?'letzter Eintrag · ':''}${scaleVsCalorieText(k)}</small></div>
-    </div>
-
-    <div class="time-progress-block">
-      <div class="time-progress-head">
-        <div>
-          <span class="eyebrow">Zeitfortschritt bis zum Ziel</span>
-          <strong>${currentTP.remaining===null?'–':currentTP.remaining+' Tage übrig'}</strong>
-        </div>
-        <span class="time-percent">${fmt(currentTP.pct)} %</span>
-      </div>
-      <div class="time-progress-track"><i style="width:${currentTP.pct}%"></i></div>
-      <div class="time-progress-meta">
-        <span>${currentTP.elapsed===null?'–':currentTP.elapsed+' Tage geschafft'}</span>
-        <span>${currentTP.total===null?'–':currentTP.total+' Tage Gesamtstrecke'}</span>
-      </div>
-      <div class="time-compare-grid">
-        <div class="time-mini">
-          <span>Originaler Plan</span>
-          <strong>${plannedTP.remaining===null?'–':plannedTP.remaining+' Tage'}</strong>
-          <small>${fmt(plannedTP.pct)} % Zeitfortschritt</small>
-        </div>
-        <div class="time-mini current ${shift>0?'bad':shift<0?'good':'mid'}">
-          <span>Aktuelle Prognose</span>
-          <strong>${currentTP.remaining===null?'–':currentTP.remaining+' Tage'}</strong>
-          <small>${shift===null?'Noch kein Vergleich':shift>0?`+${shift} Tage später`:shift<0?`${Math.abs(shift)} Tage früher`:'Im Zeitplan'}</small>
-        </div>
-      </div>
-      <p class="time-explain">Dieser Fortschritt reagiert auf deine echte Kalorienbilanz und den aktuellen prognostizierten Zieltermin. Wenn sich dein Zieltermin nach hinten verschiebt, kann die Prozentzahl sinken; wenn du Zeit aufholst, steigt sie schneller.</p>
-    </div>
-
-    <div class="goal-dates">
-      <div class="goal-date"><span>Geplanter Zieltermin</span><strong>${orig?parseDate(orig).toLocaleDateString('de-DE'):'–'}</strong></div>
-      <div class="goal-date"><span>Aktueller Zieltermin</span><strong>${cur?parseDate(cur).toLocaleDateString('de-DE'):'–'}</strong></div>
-    </div>
-    <div class="date-shift ${shift===null?'neutral':shift>0?'bad':shift<0?'good':'mid'}">${shift===null?'Noch kein Vergleich':shift>0?`+${shift} Tage später`:shift<0?`${Math.abs(shift)} Tage früher`:'Zieltermin unverändert'}</div>
-
-    <div class="impact-box">
-      <div class="impact ${impact.cal>100?'bad':impact.cal<-100?'good':'mid'}"><span>Essen heute</span><strong>${impact.cal>0?'+':''}${fmt(impact.cal)} kcal</strong><small>gegenüber deinem Plan</small></div>
-      <div class="impact ${impact.missed>0?'bad':'good'}"><span>Training heute</span><strong>${gymDay(k)?(a.gymDone===true?'Erledigt':'Noch offen'):'Kein Gym geplant'}</strong><small>${gymDay(k)?`Planwert ${fmt(db.gym.calories)} kcal`:''}</small></div>
-    </div>
-
-    <div class="model-note">
-      <b>${scaleVsCalorieText(k)}</b>
-      <span>Das Kaloriengewicht ist ein theoretisches Energiebilanz-Modell. Die Waage kann durch Wasser, Salz, Glykogen und Magen-/Darminhalt abweichen.</span>
-      <small>${coverage.logged} von ${coverage.total} Tagen mit echten Kalorienwerten${coverage.missing?` · ${coverage.missing} fehlende Tage wurden mit Plan-Kalorien gerechnet`:''}</small>
-    </div>
-  </section>`;
-
-  $('#todayWeight').value=a.weight??'';
-  $('#todayCalories').value=a.calories??'';
-
-  const gw=$('#gymTodayWrap');
-  if(gw){
-    gw.classList.toggle('hidden',!gymDay(k));
-    if(gymDay(k)){
-      $('#gymBurnLabel').textContent=`ca. ${fmt(db.gym.calories)} kcal im Plan`;
-      $('#gymDone').checked=a.gymDone===true;
-    }
-  }
-
-  const strip=$('#recentDays');
-  if(strip){
-    strip.innerHTML='';
-    for(let i=-5;i<=1;i++){
-      const d=new Date();d.setDate(d.getDate()+i);
-      const dk=dateKey(d),x=actual(dk),ss=statusFor(dk),cm=calorieModelWeight(dk),b=document.createElement('button');
-      b.className=`day-mini ${ss.className}`;
-      b.innerHTML=`<span>${d.toLocaleDateString('de-DE',{weekday:'short',day:'2-digit',month:'2-digit'})}${gymDay(dk)?(x.gymDone===true?' · Gym ✓':' · Gym'):''}</span><strong>${hasNumberValue(cm)?fmt(cm,1)+' kg':'–'}</strong><small>Kaloriengewicht · Waage ${hasValidWeight(x.weight)?fmt(x.weight,1):'–'}</small>`;
-      b.onclick=()=>editDay(dk);
-      strip.appendChild(b);
-    }
-  }
-}
-
-
-/* Goal 4.4 — hybrid goal-date forecast + selectable weight forecast */
-function addDays44(k,n){const d=parseDate(k);d.setDate(d.getDate()+n);return dateKey(d)}
-function recentScalePlanDeviation(limit=7){
-  const entries=Object.values(db.days)
-    .filter(d=>d.date<=dateKey()&&hasValidWeight(d.weight)&&hasNumberValue(expectedWeight(d.date)))
-    .sort((a,b)=>a.date.localeCompare(b.date))
-    .slice(-limit);
-  if(!entries.length)return{count:0,avg:null};
-  const avg=entries.reduce((sum,d)=>sum+(+d.weight-+expectedWeight(d.date)),0)/entries.length;
-  return{count:entries.length,avg};
-}
-
-/* Do not punish a training marked "Noch offen" on the current day. A saved false
-   becomes a missed session only once that calendar day is in the past. */
-accumulatedDeviation=function(){
-  const p=db.plan;if(!p.startDate)return 0;let total=0,today=dateKey();
-  Object.values(db.days).forEach(d=>{
-    if(d.date<p.startDate||d.date>today)return;
-    if(hasNumberValue(d.calories))total+=(+d.calories-(+p.plannedCalories||0));
-    if(gymDay(d.date)&&d.date<today&&d.gymDone===false)total+=(+db.gym.calories||0);
-  });
-  return total;
-}
-todayCalorieImpact=function(){
-  const d=actual(dateKey()),planned=+db.plan.plannedCalories||0;
-  const cal=hasNumberValue(d.calories)?+d.calories-planned:0;
-  return{cal,missed:0,total:cal};
-}
-
-/* Weight trend is the primary source for the current goal date once there are
-   at least 3 real scale measurements. Calories are the fallback while data is sparse. */
-const _goalDateCurrentCalories44=goalDateCurrent;
-goalDateCurrent=function(){
-  const orig=goalDateOriginal();if(!orig)return null;
-  const trend=recentScalePlanDeviation(7);
-  const avgDef=avgPlannedDeficit();
-  if(trend.count>=3&&hasNumberValue(trend.avg)&&avgDef>0){
-    const kgPerDay=avgDef/7700;
-    if(kgPerDay>0){
-      const shift=Math.round(trend.avg/kgPerDay);
-      return addDays44(orig,shift);
-    }
-  }
-  return _goalDateCurrentCalories44();
-}
-function currentForecastSource(){
-  const trend=recentScalePlanDeviation(7);
-  return trend.count>=3?{type:'scale',count:trend.count,avg:trend.avg}:{type:'calories',count:trend.count,avg:trend.avg};
-}
-
-function calorieForecastWeightForDate(k){
-  const today=dateKey();
-  if(k<=today)return calorieModelWeight(k);
-  let w=calorieModelWeight(today);
-  if(!hasNumberValue(w))return null;
-  let cur=addDays44(today,1),guard=0;
-  while(cur<=k&&guard<2000){w-=planDeficitFor(cur)/7700;cur=addDays44(cur,1);guard++}
-  return w;
-}
-function currentForecastWeightForDate(k){
-  const planW=expectedWeight(k),trend=recentScalePlanDeviation(7);
-  if(trend.count>=3&&hasNumberValue(trend.avg)&&hasNumberValue(planW))return +planW+trend.avg;
-  return calorieForecastWeightForDate(k);
-}
-function forecastDateDefault(){return addDays44(dateKey(),30)}
-function renderForecast(){
-  const input=$('#forecastDate'),box=$('#forecastResult');
-  if(!input||!box)return;
-  if(!input.value)input.value=forecastDateDefault();
-  if(input.value<dateKey())input.value=dateKey();
-  const k=input.value,planW=expectedWeight(k),calW=calorieForecastWeightForDate(k),currentW=currentForecastWeightForDate(k),src=currentForecastSource();
-  const d=parseDate(k).toLocaleDateString('de-DE',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric'});
-  const goal=+db.plan.goalWeight;
-  const remaining=hasNumberValue(currentW)&&hasNumberValue(goal)?Math.max(0,+currentW-goal):null;
-  box.innerHTML=`<div class="forecast-main"><span>Aktuelle Prognose für ${d}</span><strong>${hasNumberValue(currentW)?fmt(currentW,1)+' kg':'–'}</strong><small>${remaining===null?'':fmt(remaining,1)+' kg bis Ziel'}</small></div><div class="forecast-grid"><div><span>Soll laut Plan</span><strong>${hasNumberValue(planW)?fmt(planW,1)+' kg':'–'}</strong></div><div><span>Kalorien-Prognose</span><strong>${hasNumberValue(calW)?fmt(calW,1)+' kg':'–'}</strong></div></div><p class="forecast-note">${src.type==='scale'?`Aktuelle Prognose basiert primär auf deinem Waagentrend aus ${src.count} Messungen. Für die Zukunft wird angenommen, dass du ab jetzt wieder deinem Plan folgst.`:`Noch weniger als 3 echte Waagenwerte. Deshalb basiert die Prognose vorläufig auf dem Kalorienmodell.`}</p>`;
-  $$('[data-forecast-days]').forEach(b=>b.classList.toggle('active',input.value===addDays44(dateKey(),+b.dataset.forecastDays)));
-}
-function initForecastControls(){
-  const input=$('#forecastDate');if(!input)return;
-  input.min=dateKey();
-  if(!input.value)input.value=forecastDateDefault();
-  input.addEventListener('change',renderForecast);
-  $$('[data-forecast-days]').forEach(b=>b.addEventListener('click',()=>{input.value=addDays44(dateKey(),+b.dataset.forecastDays);renderForecast()}));
-}
-
-const _renderAll44=renderAll;
-renderAll=function(){_renderAll44();renderForecast()}
-
-const _renderToday44=renderToday;
-renderToday=function(){
-  _renderToday44();
-  const src=currentForecastSource();
-  const time=$('#todayCard .time-progress-block');
-  if(time){
-    let note=time.querySelector('.forecast-source-note');
-    if(!note){note=document.createElement('div');note.className='forecast-source-note';time.appendChild(note)}
-    note.textContent=src.type==='scale'?`Zieltermin nach Waagentrend · ${src.count} Messungen`:'Zieltermin vorläufig nach Kalorienmodell';
-  }
-  if(gymDay(dateKey())&&actual(dateKey()).gymDone!==true){
-    const training=$('#todayCard .impact-box .impact:nth-child(2)');
-    if(training){training.classList.remove('good','bad');training.classList.add('mid')}
-  }
-}
-
-document.addEventListener('DOMContentLoaded',()=>{initForecastControls();renderForecast()});
-
-
-/* Goal 4.5 — adherence colors, weekly streaks and recurring gym calendar */
-function id45(){return 'g'+Date.now().toString(36)+Math.random().toString(36).slice(2,7)}
-function prevDay45(k){return addDays44(k,-1)}
-function maxDate45(a,b){return !a?b:!b?a:(a>b?a:b)}
-function monday45(k){const d=parseDate(k),day=d.getDay(),diff=(day===0?-6:1-day);d.setDate(d.getDate()+diff);return dateKey(d)}
-function sunday45(k){return addDays44(monday45(k),6)}
-function nextWeek45(k){return addDays44(k,7)}
-function prevWeek45(k){return addDays44(k,-7)}
-function firstWeekdayOnOrAfter45(start,weekday){let k=start;for(let i=0;i<7;i++){if(parseDate(k).getDay()===weekday)return k;k=addDays44(k,1)}return start}
-
-function ensureGymCalendar45(){
-  db.gym=db.gym||{weekdays:[],calories:300};
-  db.gym.series=Array.isArray(db.gym.series)?db.gym.series:[];
-  db.gym.skips=Array.isArray(db.gym.skips)?db.gym.skips:[];
-  if(!db.gym.calendarMigrated45 && db.gym.series.length===0 && Array.isArray(db.gym.weekdays) && db.gym.weekdays.length){
-    const base=db.plan.startDate||dateKey();
-    db.gym.weekdays.forEach(w=>db.gym.series.push({id:id45(),type:'weekly',start:firstWeekdayOnOrAfter45(base,+w),end:null,weekday:+w}));
-    db.gym.weekdays=[];
-    db.gym.calendarMigrated45=true;
-    save();
-  } else if(!db.gym.calendarMigrated45){db.gym.calendarMigrated45=true;save()}
-}
-ensureGymCalendar45();
-
-function skip45(seriesId,k){return db.gym.skips.some(x=>x.seriesId===seriesId&&x.date===k)}
-function gymOccurrences45(k){
+function isSkipped(seriesId,k){return db.gym.skips.some(x=>x.seriesId===seriesId&&x.date===k)}
+function gymOccurrences(k){
   const out=[];
-  for(const s of db.gym.series||[]){
+  for(const s of db.gym.series){
+    if(!s||isSkipped(s.id,k))continue;
     if(s.type==='once'){
       if(s.date===k)out.push(s);
-    }else if(s.type==='weekly'){
-      if(k>=s.start&&(!s.end||k<=s.end)&&parseDate(k).getDay()===+s.weekday&&!skip45(s.id,k))out.push(s);
+      continue;
+    }
+    if(s.type==='weekly'){
+      if(!s.start||k<s.start)continue;
+      if(s.end&&k>s.end)continue;
+      const wd=hasNum(s.weekday)?+s.weekday:parseDate(s.start).getDay();
+      if(parseDate(k).getDay()===wd)out.push(s);
     }
   }
   return out;
 }
-gymDay=function(k){return gymOccurrences45(k).length>0}
+function gymDay(k){return gymOccurrences(k).length>0}
+function gymBurnPlanned(k){return gymOccurrences(k).reduce((sum,s)=>sum+(hasNum(s.calories)?+s.calories:(+db.gym.calories||0)),0)}
+function planBaseDeficit(){return (+db.plan.maintenanceCalories||0)-(+db.plan.plannedCalories||0)}
+function plannedDeficit(k){return planBaseDeficit()+gymBurnPlanned(k)}
 
-avgPlannedDeficit=function(){
-  const base=(+db.plan.maintenanceCalories||0)-(+db.plan.plannedCalories||0);
-  let extra=0,start=dateKey();
-  for(let i=0;i<28;i++)if(gymDay(addDays44(start,i)))extra+=(+db.gym.calories||0);
-  return base+extra/28;
+function plannedWeight(k){
+  const p=db.plan;
+  if(!p.startDate||!validWeight(p.startWeight)||parseDate(k)<parseDate(p.startDate))return null;
+  let w=+p.startWeight,cur=p.startDate,guard=0;
+  while(cur<=k&&guard<2500){w-=plannedDeficit(cur)/7700;cur=addDays(cur,1);guard++}
+  return w;
 }
-
-function plannedGymDates45(from,to){const a=[];for(let k=from;k<=to;k=addDays44(k,1))if(gymDay(k))a.push(k);return a}
-function gymWeekStatus45(ws){
-  const we=addDays44(ws,6),today=dateKey(),planned=plannedGymDates45(ws,we),done=planned.filter(k=>actual(k).gymDone===true);
-  const allDue=planned.length>0&&planned.every(k=>k<=today);
-  return{planned:planned.length,done:done.length,dates:planned,complete:allDue&&done.length===planned.length,finished:we<today||allDue};
+function calorieModelWeight(k=dateKey()){
+  const p=db.plan;
+  if(!p.startDate||!validWeight(p.startWeight)||parseDate(k)<parseDate(p.startDate))return null;
+  const today=dateKey();
+  let w=+p.startWeight,cur=p.startDate,guard=0;
+  while(cur<=k&&guard<2500){
+    const d=actual(cur);
+    if(cur===today&&!hasNum(d.calories)){cur=addDays(cur,1);guard++;continue}
+    const eaten=hasNum(d.calories)?+d.calories:(+p.plannedCalories||0);
+    const gymBurn=gymDay(cur)&&d.gymDone===true?gymBurnPlanned(cur):0;
+    w-=((+p.maintenanceCalories||0)-eaten+gymBurn)/7700;
+    cur=addDays(cur,1);guard++;
+  }
+  return w;
 }
-function gymStreak45(){
-  const current=monday45(dateKey()),cur=gymWeekStatus45(current);
-  let ws=current,count=0;
-  if(!cur.complete)ws=prevWeek45(ws);
-  for(let i=0;i<104;i++){
-    const st=gymWeekStatus45(ws);
-    if(!st.planned)break;
-    if(!st.complete)break;
-    count++;ws=prevWeek45(ws);
+function calorieModelCoverage(k=dateKey()){
+  const p=db.plan;if(!p.startDate)return{logged:0,total:0};
+  let logged=0,total=0,cur=p.startDate,guard=0;
+  while(cur<=k&&guard<2500){if(cur!==dateKey()||hasNum(actual(cur).calories)){total++;if(hasNum(actual(cur).calories))logged++}cur=addDays(cur,1);guard++}
+  return{logged,total};
+}
+function allWeights(until=dateKey()){
+  return Object.values(db.days).filter(d=>d.date<=until&&validWeight(d.weight)).sort((a,b)=>a.date.localeCompare(b.date));
+}
+function latestWeight(until=dateKey()){const a=allWeights(until);return a.length?+a.at(-1).weight:null}
+function smoothedScaleWeight(until=dateKey()){
+  const cutoff=addDays(until,-10);
+  const a=allWeights(until).filter(d=>d.date>=cutoff).slice(-7);
+  if(!a.length)return null;
+  if(a.length<3)return +a.at(-1).weight;
+  const vals=a.map(x=>+x.weight).sort((x,y)=>x-y);
+  if(vals.length>=5){vals.shift();vals.pop()}
+  return vals.reduce((s,v)=>s+v,0)/vals.length;
+}
+function progressPct(current){
+  const s=+db.plan.startWeight,g=+db.plan.goalWeight;
+  if(!validWeight(s)||!validWeight(g)||!validWeight(current)||s===g)return 0;
+  return clamp((s-current)/(s-g)*100,0,100);
+}
+function originalGoalDate(){
+  const p=db.plan;if(!p.startDate||!validWeight(p.startWeight)||!validWeight(p.goalWeight)||+p.goalWeight>=+p.startWeight)return null;
+  let w=+p.startWeight,k=p.startDate,guard=0;
+  while(w>+p.goalWeight&&guard<2500){w-=plannedDeficit(k)/7700;k=addDays(k,1);guard++}
+  return guard<2500?k:null;
+}
+function projectFromWeight(baseWeight,fromDate,targetDate){
+  if(!validWeight(baseWeight)||!targetDate||targetDate<fromDate)return null;
+  let w=+baseWeight,k=addDays(fromDate,1),guard=0;
+  while(k<=targetDate&&guard<2500){w-=plannedDeficit(k)/7700;k=addDays(k,1);guard++}
+  return w;
+}
+function currentForecastBase(){return smoothedScaleWeight(dateKey())??calorieModelWeight(dateKey())??(+db.plan.startWeight||null)}
+function currentGoalDate(){
+  const p=db.plan,base=currentForecastBase();
+  if(!validWeight(base)||!validWeight(p.goalWeight))return null;
+  if(base<=+p.goalWeight)return dateKey();
+  let w=base,k=dateKey(),guard=0;
+  while(w>+p.goalWeight&&guard<2500){k=addDays(k,1);w-=plannedDeficit(k)/7700;guard++}
+  return guard<2500?k:null;
+}
+function goalShiftDays(){const a=originalGoalDate(),b=currentGoalDate();return a&&b?daysBetween(a,b):null}
+function forecastWeight(targetDate){return projectFromWeight(currentForecastBase(),dateKey(),targetDate)}
+function forecastModelWeight(targetDate){return projectFromWeight(calorieModelWeight(dateKey()),dateKey(),targetDate)}
+function planStatusToday(){
+  const actualW=smoothedScaleWeight(dateKey())??latestWeight(dateKey()),planW=plannedWeight(dateKey());
+  if(!validWeight(actualW)||!hasNum(planW))return{type:'neutral',text:'Noch nicht genug Gewichtsdaten',diff:null};
+  const diff=actualW-planW;
+  if(Math.abs(diff)<=.15)return{type:'good',text:'Du bist im Plan',diff};
+  if(diff<0)return{type:'good',text:`${fmt(Math.abs(diff),1)} kg vor dem Plan`,diff};
+  return{type:'bad',text:`${fmt(diff,1)} kg hinter dem Plan`,diff};
+}
+function calorieStatus(k){
+  const c=actual(k).calories,p=+db.plan.plannedCalories||0;
+  if(!hasNum(c))return'neutral';
+  return +c<=p+100?'good':'bad';
+}
+function gymStatus(k){
+  if(!gymDay(k))return'neutral';
+  const d=actual(k);
+  if(d.gymDone===true)return'good';
+  if(k<dateKey())return'bad';
+  return'open';
+}
+function calorieStreak(){
+  let k=dateKey();
+  if(!hasNum(actual(k).calories))k=addDays(k,-1);
+  let n=0,guard=0;
+  while(guard<1500){const d=actual(k);if(!hasNum(d.calories)||calorieStatus(k)!=='good')break;n++;k=addDays(k,-1);guard++}
+  return n;
+}
+function weekGymStatus(ws){
+  const we=addDays(ws,6),planned=[];
+  for(let k=ws;k<=we;k=addDays(k,1))if(gymDay(k))planned.push(k);
+  const done=planned.filter(k=>actual(k).gymDone===true);
+  const future=planned.filter(k=>k>dateKey());
+  return{planned:planned.length,done:done.length,future:future.length,success:planned.length>0&&done.length===planned.length&&future.length===0};
+}
+function gymWeekStreak(){
+  let ws=monday(dateKey()),cur=weekGymStatus(ws),count=0;
+  if(!cur.success)ws=addDays(ws,-7);
+  for(let i=0;i<160;i++){
+    const st=weekGymStatus(ws);
+    if(!st.planned||!st.success)break;
+    count++;ws=addDays(ws,-7);
   }
   return{weeks:count,current:cur};
 }
-function calorieOk45(k){const c=actual(k).calories,p=+db.plan.plannedCalories;if(!hasNumberValue(c)||!hasNumberValue(p))return null;return +c<=p+100}
-function calorieStreak45(){
-  let k=dateKey();if(!hasNumberValue(actual(k).calories))k=prevDay45(k);
-  let n=0;for(let i=0;i<1000;i++){const ok=calorieOk45(k);if(ok!==true)break;n++;k=prevDay45(k)}return n;
-}
-function renderStreaks45(){
-  const box=$('#streakSummary');if(!box)return;
-  const gs=gymStreak45(),cs=calorieStreak45(),cur=gs.current;
-  box.innerHTML=`<div class="streak-item calories"><span>Kalorien-Serie</span><strong>🔥 ${cs} ${cs===1?'Tag':'Tage'}</strong><small>grün bis einschließlich +100 kcal</small></div><div class="streak-item gym"><span>Gym-Serie</span><strong>🏋️ ${gs.weeks} ${gs.weeks===1?'Woche':'Wochen'}</strong><small>${cur.planned?`${cur.done}/${cur.planned} Trainings diese Woche`:'Diese Woche kein Training geplant'}</small></div>`;
-}
 
-function calorieColor45(d){const ok=calorieOk45(d.date);return ok===null?'neutral':ok?'good':'bad'}
-function gymColor45(d){if(!gymDay(d.date))return'neutral';if(d.gymDone===true)return'good';if(d.date<dateKey())return'bad';return'neutral'}
-renderHistory=function(){
-  renderStreaks45();
-  const all=Object.values(db.days).sort((a,b)=>b.date.localeCompare(a.date));
-  $('#historyList').innerHTML=all.length?all.map(d=>{
-    const st=statusFor(d.date),plan=expectedWeight(d.date),model=calorieModelWeight(d.date),gym=gymDay(d.date),cc=calorieColor45(d),gc=gymColor45(d);
-    const calText=hasNumberValue(d.calories)?fmt(d.calories)+' kcal':'Keine Kalorien';
-    const gymText=gym?`<span class="history-gym ${gc}">Gym ${d.gymDone===true?'✓':d.date<dateKey()?'×':'offen'}</span>`:'';
-    return `<div class="history-card ${st.className}"><div class="history-top"><div><h3>${parseDate(d.date).toLocaleDateString('de-DE',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric'})}</h3><p><span class="history-cal ${cc}">${calText}</span>${gym?` · ${gymText}`:''}</p></div><span class="history-status ${st.className}">${st.text}</span></div><div class="history-values history-three"><div><span>Soll</span><strong>${hasNumberValue(plan)?fmt(plan,1)+' kg':'–'}</strong></div><div><span>Kaloriengewicht</span><strong>${hasNumberValue(model)?fmt(model,1)+' kg':'–'}</strong></div><div><span>Waage</span><strong>${hasValidWeight(d.weight)?fmt(d.weight,1)+' kg':'–'}</strong></div></div><div class="history-actions"><button class="edit-btn" data-edit="${d.date}">Bearbeiten</button><button class="delete-btn" data-delete="${d.date}">Löschen</button></div></div>`;
-  }).join(''):'<p>Noch keine Einträge.</p>';
-  $$('[data-edit]').forEach(b=>b.onclick=()=>editDay(b.dataset.edit));
-  $$('[data-delete]').forEach(b=>b.onclick=()=>deleteDay(b.dataset.delete));
-}
-
-editDay=function(k){
-  const d=actual(k),plan=expectedWeight(k),gym=gymDay(k);
-  openModal(`<h2>${parseDate(k).toLocaleDateString('de-DE',{weekday:'long',day:'2-digit',month:'long'})}</h2><p>Sollgewicht: ${hasNumberValue(plan)?fmt(plan,1)+' kg':'–'}</p><form id="editDayForm" class="form"><label>Gewicht (kg)<input id="editWeight" type="number" step="0.1" value="${d.weight??''}"></label><label>Kalorien<input id="editCalories" type="number" value="${d.calories??''}"></label>${gym?`<div class="gym-check"><div><b>Training erledigt</b><small>Geplant · ca. ${fmt(db.gym.calories)} kcal</small></div><label class="switch-label"><input id="editGymDone" type="checkbox" ${d.gymDone===true?'checked':''}><span></span></label></div>`:''}<button class="primary">Speichern</button></form>`);
-  $('#editDayForm').onsubmit=e=>{e.preventDefault();db.days[k]={...d,date:k,weight:num('#editWeight'),calories:num('#editCalories'),gymDone:gym?$('#editGymDone').checked:null};save();closeModal();renderAll();toast('Tag gespeichert')};
-}
-
-function upcomingGym45(limit=16){
-  const out=[],today=dateKey();let k=today;
-  for(let i=0;i<370&&out.length<limit;i++,k=addDays44(k,1))if(gymDay(k))out.push({date:k,series:gymOccurrences45(k)});
-  return out;
-}
-function renderGymCalendar45(){
-  const list=$('#gymCalendarList');if(!list)return;
-  const events=upcomingGym45();
-  list.innerHTML=events.length?events.map(e=>{const recurring=e.series.some(s=>s.type==='weekly');return `<button type="button" class="gym-event-row" data-gym-occurrence="${e.date}"><div><strong>${parseDate(e.date).toLocaleDateString('de-DE',{weekday:'long',day:'2-digit',month:'2-digit',year:'numeric'})}</strong><small>${recurring?'Wöchentliche Serie':'Einmaliger Termin'}</small></div><span>Bearbeiten ›</span></button>`}).join(''):'<div class="calendar-empty">Keine zukünftigen Trainings geplant.</div>';
-  $$('[data-gym-occurrence]').forEach(b=>b.onclick=()=>openGymOccurrence45(b.dataset.gymOccurrence));
-}
-renderPlan=function(){
-  const p=db.plan;$('#startDate').value=p.startDate||dateKey();$('#startWeight').value=p.startWeight??'';$('#maintenanceCalories').value=p.maintenanceCalories??'';$('#plannedCalories').value=p.plannedCalories??'';$('#goalWeight').value=p.goalWeight??'';
-  const gd=$('#gymEventDate');if(gd&&!gd.value)gd.value=dateKey();const gc=$('#gymCalories');if(gc)gc.value=db.gym.calories??300;
-  renderGymCalendar45();renderPlanSummary();
-}
-renderPlanSummary=function(){
-  const box=$('#planSummary'),orig=goalDateOriginal(),cur=goalDateCurrent(),shift=dayShift(),base=(+db.plan.maintenanceCalories||0)-(+db.plan.plannedCalories||0);
-  let sessions=0;for(let i=0;i<28;i++)if(gymDay(addDays44(dateKey(),i)))sessions++;
-  const gymAvg=sessions*(+db.gym.calories||0)/28;
-  box.innerHTML=`<div class="summary-item"><span>Basisdefizit</span><strong>${fmt(base)} kcal / Tag</strong></div><div class="summary-item"><span>Gym im 28-Tage-Schnitt</span><strong>+${fmt(gymAvg)} kcal / Tag</strong></div><div class="summary-item"><span>Geplanter Zieltermin</span><strong>${orig?parseDate(orig).toLocaleDateString('de-DE'):'–'}</strong></div><div class="summary-item"><span>Aktueller Zieltermin</span><strong>${cur?parseDate(cur).toLocaleDateString('de-DE'):'–'}</strong></div><div class="summary-item"><span>Abweichung</span><strong>${shift===null?'–':shift>0?`+${shift} Tage`:shift<0?`${Math.abs(shift)} Tage früher`:'Im Plan'}</strong></div>`;
-}
-
-function addGymEvent45(e){
-  e.preventDefault();const k=$('#gymEventDate').value,type=$('#gymEventRepeat').value,cal=num('#gymCalories');if(!k)return toast('Bitte Datum wählen');if(hasNumberValue(cal)&&cal>=0)db.gym.calories=cal;
-  if(type==='once')db.gym.series.push({id:id45(),type:'once',date:k});else db.gym.series.push({id:id45(),type:'weekly',start:k,end:null,weekday:parseDate(k).getDay()});
-  save();renderAll();toast(type==='weekly'?'Wöchentliche Serie hinzugefügt':'Training hinzugefügt');
-}
-function seriesForOccurrence45(k){return gymOccurrences45(k)[0]||null}
-function openGymOccurrence45(k){
-  const s=seriesForOccurrence45(k);if(!s)return;
-  if(s.type==='once'){
-    openModal(`<h2>Training bearbeiten</h2><p>${parseDate(k).toLocaleDateString('de-DE',{weekday:'long',day:'2-digit',month:'long',year:'numeric'})}</p><form id="oneGymForm" class="form"><label>Datum<input id="oneGymDate" type="date" value="${k}"></label><button class="primary">Speichern</button><button id="deleteOneGym" type="button" class="danger-soft">Termin löschen</button></form>`);
-    $('#oneGymForm').onsubmit=e=>{e.preventDefault();s.date=$('#oneGymDate').value;save();closeModal();renderAll();toast('Termin geändert')};
-    $('#deleteOneGym').onclick=()=>{db.gym.series=db.gym.series.filter(x=>x.id!==s.id);save();closeModal();renderAll();toast('Termin gelöscht')};return;
-  }
-  openModal(`<h2>Serientermin bearbeiten</h2><p>${parseDate(k).toLocaleDateString('de-DE',{weekday:'long',day:'2-digit',month:'long',year:'numeric'})}</p><label class="standalone-label">Neues Datum<input id="seriesGymDate" type="date" value="${k}"></label><div class="series-actions"><button id="moveThisGym" class="secondary" type="button">Nur diesen Termin ändern</button><button id="changeFutureGym" class="secondary" type="button">Diesen + zukünftige ändern</button><button id="deleteThisGym" class="danger-soft" type="button">Nur diesen Termin löschen</button><button id="deleteFutureGym" class="danger-soft" type="button">Diesen + zukünftige löschen</button></div>`);
-  $('#moveThisGym').onclick=()=>{const nk=$('#seriesGymDate').value;if(!nk)return;db.gym.skips.push({seriesId:s.id,date:k});db.gym.series.push({id:id45(),type:'once',date:nk});save();closeModal();renderAll();toast('Ein Termin geändert')};
-  $('#changeFutureGym').onclick=()=>{const nk=$('#seriesGymDate').value;if(!nk)return;s.end=prevDay45(k);db.gym.series.push({id:id45(),type:'weekly',start:nk,end:null,weekday:parseDate(nk).getDay()});save();closeModal();renderAll();toast('Zukünftige Serie geändert')};
-  $('#deleteThisGym').onclick=()=>{if(!skip45(s.id,k))db.gym.skips.push({seriesId:s.id,date:k});save();closeModal();renderAll();toast('Termin gelöscht')};
-  $('#deleteFutureGym').onclick=()=>{s.end=prevDay45(k);save();closeModal();renderAll();toast('Dieser und zukünftige Termine gelöscht')};
-}
-
-/* Weekly calendar also drives planned training in all weight/goal calculations. */
-const _saveToday45=saveToday;
-saveToday=function(e){_saveToday45(e);renderStreaks45()}
-
-/* Current-day calorie status is green through +100 kcal. */
-const _renderToday45=renderToday;
-renderToday=function(){
-  _renderToday45();
-  const imp=$('#todayCard .impact-box .impact:first-child');if(imp){const c=actual(dateKey()).calories;if(hasNumberValue(c)){imp.classList.remove('good','bad','mid');imp.classList.add(+c<=(+db.plan.plannedCalories||0)+100?'good':'bad')}}
-}
-
-/* Recalculate missed training only after the day has passed and only for planned calendar dates. */
-accumulatedDeviation=function(){
-  const p=db.plan;if(!p.startDate)return 0;let total=0,today=dateKey();
-  for(let k=p.startDate;k<=today;k=addDays44(k,1)){
-    const d=actual(k);if(hasNumberValue(d.calories))total+=(+d.calories-(+p.plannedCalories||0));
-    if(k<today&&gymDay(k)&&d.gymDone===false)total+=(+db.gym.calories||0);
-  }
-  return total;
-}
-
-function init45(){
-  const f=$('#gymEventForm');if(f&&!f.dataset.bound45){f.dataset.bound45='1';f.addEventListener('submit',addGymEvent45)}
-  const gd=$('#gymEventDate');if(gd){gd.min=db.plan.startDate||dateKey();if(!gd.value)gd.value=dateKey()}
-  renderStreaks45();renderGymCalendar45();
-}
-document.addEventListener('DOMContentLoaded',init45);
-const _renderAll45=renderAll;
-renderAll=function(){_renderAll45();init45()}
-
-
-/* Goal 4.6 — clearer progress since start */
-function signedKg46(start,current){
-  if(!hasNumberValue(start)||!hasNumberValue(current))return null;
-  return +current-(+start);
-}
-function signedKgText46(delta){
-  if(delta===null||!Number.isFinite(+delta))return '–';
-  if(Math.abs(+delta)<0.05)return '±0,0 kg';
-  return `${+delta<0?'−':'+'}${fmt(Math.abs(+delta),1)} kg`;
-}
-function progressSinceStart46(){
-  const start=hasValidWeight(db.plan.startWeight)?+db.plan.startWeight:null;
-  const model=calorieModelWeight(dateKey());
-  const scaleInfo=scaleDisplayInfo(dateKey());
-  const scale=hasValidWeight(scaleInfo.weight)?+scaleInfo.weight:null;
-  return {
-    start,
-    model:hasNumberValue(model)?+model:null,
-    scale,
-    modelDelta:start!==null&&hasNumberValue(model)?signedKg46(start,+model):null,
-    scaleDelta:start!==null&&scale!==null?signedKg46(start,scale):null,
-    scaleSource:scaleInfo.source
+function svgIcon(name){
+  const map={
+    scale:'<path d="M5 7h14l1 13H4L5 7Z"/><path d="M8 7a4 4 0 0 1 8 0"/><path d="m12 7 2-2"/>',
+    model:'<path d="M7 4h10M6 8h12v12H6z"/><path d="M9 12h6M9 16h4"/>',
+    calories:'<path d="M7 3v8M10 3v8M7 7h3M8.5 11v10M16 3v18M16 3c3 3 3 7 0 10"/>',
+    gym:'<path d="M4 9v6M7 7v10M17 7v10M20 9v6M7 12h10"/>',
+    calendar:'<path d="M7 3v4M17 3v4M4 9h16M5 5h14a1 1 0 0 1 1 1v14H4V6a1 1 0 0 1 1-1z"/>',
+    trend:'<path d="M4 18 9 12l4 3 7-9M4 21h16"/>',
+    target:'<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/>',
+    edit:'<path d="m4 20 4-1 10-10-3-3L5 16l-1 4Z"/><path d="m13 7 3 3"/>',
+    trash:'<path d="M5 7h14M9 7V4h6v3M7 7l1 13h8l1-13"/>'
   };
+  return `<svg viewBox="0 0 24 24" aria-hidden="true">${map[name]||map.target}</svg>`;
 }
 
-const _renderToday46=renderToday;
-renderToday=function(){
-  _renderToday46();
-  const hero=$('#todayCard .hero');
-  if(!hero)return;
-  const p=progressSinceStart46();
-  const goalHead=hero.querySelector('.goal-head');
-  if(!goalHead)return;
+function init(){
+  migrateOldWeekdays(db);save();
+  bindNavigation();bindActions();setHeader();renderAll();
+  if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+}
+function setHeader(){
+  $('#headerDate').textContent=new Date().toLocaleDateString('de-DE',{weekday:'long',day:'2-digit',month:'long'});
+}
+function bindNavigation(){
+  $$('.bottom-nav button').forEach(b=>b.addEventListener('click',()=>openPage(b.dataset.page)));
+  $$('[data-analysis-tab]').forEach(b=>b.addEventListener('click',()=>openAnalysisTab(b.dataset.analysisTab)));
+}
+function openPage(name){
+  $$('.page').forEach(p=>p.classList.toggle('active',p.id===name));
+  $$('.bottom-nav button').forEach(b=>b.classList.toggle('active',b.dataset.page===name));
+  $('#pageTitle').textContent={home:'Heute',calendar:'Kalender',history:'Verlauf',analysis:'Analyse',plan:'Ziel & Plan'}[name]||'WesGym';
+  if(name==='calendar')renderCalendar();
+  if(name==='history')renderHistory();
+  if(name==='analysis')renderAnalysis();
+  if(name==='plan')renderPlan();
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+function openAnalysisTab(tab){
+  $$('[data-analysis-tab]').forEach(b=>b.classList.toggle('active',b.dataset.analysisTab===tab));
+  $('#analysisProgress').classList.toggle('active',tab==='progress');
+  $('#analysisForecast').classList.toggle('active',tab==='forecast');
+  if(tab==='forecast')renderForecast(); else renderAnalysisProgress();
+}
+function bindActions(){
+  $('#todayForm').addEventListener('submit',saveToday);
+  $('#editTodayLink').addEventListener('click',()=>openDayEditor(dateKey()));
+  $('#quickAdd').addEventListener('click',()=>openDayEditor(dateKey()));
+  $('#planForm').addEventListener('submit',savePlan);
+  $('#trainingForm').addEventListener('submit',addTrainingFromPlan);
+  $('#addTrainingBtn').addEventListener('click',openNewTrainingModal);
+  $('#calendarPrev').addEventListener('click',()=>{calendarCursor=new Date(calendarCursor.getFullYear(),calendarCursor.getMonth()-1,1,12);renderCalendar()});
+  $('#calendarNext').addEventListener('click',()=>{calendarCursor=new Date(calendarCursor.getFullYear(),calendarCursor.getMonth()+1,1,12);renderCalendar()});
+  $('#modal').addEventListener('click',e=>{if(e.target.matches('[data-close]'))closeModal()});
+  $('#exportBtn').addEventListener('click',exportData);
+  $('#importInput').addEventListener('change',importData);
+  $('#resetBtn').addEventListener('click',resetData);
+  $('#forecastDate').addEventListener('change',()=>{forecastDays=null;renderForecast()});
+  $('#forecastButtons').addEventListener('click',e=>{const b=e.target.closest('[data-days]');if(!b)return;forecastDays=+b.dataset.days;$('#forecastDate').value='';renderForecast()});
+  $('#chartRanges').addEventListener('click',e=>{const b=e.target.closest('[data-range]');if(!b)return;chartRange=b.dataset.range;renderAnalysisProgress()});
+}
+function renderAll(){renderHome();renderCalendar();renderHistory();renderAnalysis();renderPlan()}
 
-  const old=hero.querySelector('.since-start-46');
-  if(old)old.remove();
-
-  const block=document.createElement('div');
-  block.className='since-start-46';
-  block.innerHTML=`
-    <div class="since-start-title46">
-      <div><span class="eyebrow">Fortschritt seit Start</span><strong>Was du wirklich geschafft hast</strong></div>
-      <span class="since-start-date46">Start ${db.plan.startDate?parseDate(db.plan.startDate).toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit'}):'–'}</span>
+function renderHome(){
+  const start=validWeight(db.plan.startWeight)?+db.plan.startWeight:null;
+  const goal=validWeight(db.plan.goalWeight)?+db.plan.goalWeight:null;
+  const scale=latestWeight(dateKey());
+  const model=calorieModelWeight(dateKey());
+  const scalePct=progressPct(scale),modelPct=progressPct(model),status=planStatusToday();
+  const target=currentGoalDate(),orig=originalGoalDate(),shift=goalShiftDays();
+  const displayCurrent=scale??model;
+  $('#heroJourney').innerHTML=`
+    <div class="journey-top"><div><span class="section-kicker">Gesamtfortschritt</span><strong>${validWeight(displayCurrent)?fmt(displayCurrent,1)+' kg':'Noch keine Daten'}</strong></div><div class="journey-percent">${fmt(scale!==null?scalePct:modelPct)}%</div></div>
+    <div class="journey-track"><i style="width:${scale!==null?scalePct:modelPct}%"></i></div>
+    <div class="journey-stats">
+      <div class="journey-stat"><span>Startgewicht</span><strong>${start!==null?fmt(start,1)+' kg':'–'}</strong></div>
+      <div class="journey-stat center"><span>Heute</span><strong>${validWeight(displayCurrent)?fmt(displayCurrent,1)+' kg':'–'}</strong></div>
+      <div class="journey-stat end"><span>Zielgewicht</span><strong>${goal!==null?fmt(goal,1)+' kg':'–'}</strong></div>
     </div>
-    <div class="since-start-grid46">
-      <div class="since-start-item46 start">
-        <span>Startgewicht</span>
-        <strong>${p.start!==null?fmt(p.start,1)+' kg':'–'}</strong>
-        <small>Ausgangspunkt</small>
-      </div>
-      <div class="since-start-item46 model ${p.modelDelta!==null&&p.modelDelta<=0?'good':p.modelDelta!==null?'bad':''}">
-        <span>Nach Kalorien</span>
-        <strong>${signedKgText46(p.modelDelta)}</strong>
-        <small>${p.model!==null?fmt(p.model,1)+' kg aktuell':'Noch keine Berechnung'}</small>
-      </div>
-      <div class="since-start-item46 scale ${p.scaleDelta!==null&&p.scaleDelta<=0?'good':p.scaleDelta!==null?'bad':''}">
-        <span>Auf der Waage</span>
-        <strong>${signedKgText46(p.scaleDelta)}</strong>
-        <small>${p.scale!==null?fmt(p.scale,1)+' kg '+(p.scaleSource==='latest'?'letzter Eintrag':'aktuell'):'Noch kein Waagenwert'}</small>
-      </div>
-    </div>`;
-  goalHead.after(block);
+    <div class="journey-note ${status.type}">${status.text}${target?` · Zieltermin ${formatDate(target)}`:''}</div>`;
+  $('#heroStatusText').textContent=shift===null?'Deine Daten zeigen dir, wo du heute wirklich stehst.':shift>0?`Die aktuelle Prognose liegt ${shift} Tage hinter dem ursprünglichen Plan.`:shift<0?`Die aktuelle Prognose liegt ${Math.abs(shift)} Tage vor dem ursprünglichen Plan.`:'Du liegst zeitlich genau auf deinem ursprünglichen Plan.';
 
-  const goalMeta=hero.querySelector('.goal-meta');
-  if(goalMeta&&p.modelDelta!==null){
-    const first=goalMeta.querySelector('span:first-child');
-    if(first)first.textContent=`${signedKgText46(p.modelDelta)} seit Start · ${first.textContent}`;
-  }
-  const scaleMeta=hero.querySelector('.scale-progress-meta');
-  if(scaleMeta&&p.scaleDelta!==null){
-    const first=scaleMeta.querySelector('span:first-child');
-    if(first)first.textContent=`${signedKgText46(p.scaleDelta)} seit Start`;
-  }
+  const total=start!==null&&goal!==null?start-goal:null;
+  const scaleLost=start!==null&&scale!==null?start-scale:null;
+  const modelLost=start!==null&&hasNum(model)?start-model:null;
+  $('#homeProgress').innerHTML=`
+    ${progressCard('actual','Waage (tatsächlich)',scaleLost,scale,scalePct,total)}
+    ${progressCard('model','Kalorienmodell',modelLost,model,modelPct,total)}`;
+
+  const today=actual(dateKey());
+  $('#todayWeight').value=validWeight(today.weight)?today.weight:'';
+  $('#todayCalories').value=hasNum(today.calories)?today.calories:'';
+  const gym=gymDay(dateKey());
+  $('#todayGymBox').classList.toggle('hidden',!gym);
+  if(gym){$('#todayGymDone').checked=today.gymDone===true;$('#todayGymText').textContent=today.gymDone===true?'Training erledigt':`${gymOccurrences(dateKey()).length} Training geplant`}
+
+  const gs=gymWeekStreak(),cs=calorieStreak(),week=gs.current;
+  $('#homeWeekSummary').innerHTML=`
+    <div class="metric-card good"><span>Kalorien-Serie</span><strong>${cs} ${cs===1?'Tag':'Tage'}</strong><small>bis +100 kcal gilt als im Ziel</small></div>
+    <div class="metric-card"><span>Training diese Woche</span><strong>${week.done}/${week.planned}</strong><small>${gs.weeks} ${gs.weeks===1?'Woche':'Wochen'} Gym-Serie</small></div>
+    <div class="metric-card ${shift!==null&&shift>0?'bad':'good'}"><span>Zieltermin</span><strong>${target?formatDate(target,{day:'2-digit',month:'2-digit'}):'–'}</strong><small>${orig?`Plan ${formatDate(orig,{day:'2-digit',month:'2-digit'})}`:'Noch kein Zieltermin'}</small></div>`;
 }
+function progressCard(type,label,lost,current,pct,total){
+  const remaining=validWeight(current)&&validWeight(db.plan.goalWeight)?Math.max(0,current-(+db.plan.goalWeight)):null;
+  return `<div class="progress-card ${type}"><span class="label">${label}</span><div class="progress-main"><div><strong>${lost===null?'–':signed(-lost,1,' kg')}</strong><div class="progress-caption">${validWeight(current)?fmt(current,1)+' kg aktuell':'Noch kein Wert'}</div></div><div class="ring" style="--p:${pct}"><span>${fmt(pct)}%</span></div></div><div class="progress-bar"><i style="width:${pct}%"></i></div><div class="progress-caption">${remaining===null?'–':fmt(remaining,1)+' kg bis zum Ziel'}${hasNum(total)?` · von ${fmt(total,1)} kg Gesamtstrecke`:''}</div></div>`;
+}
+function saveToday(e){
+  e.preventDefault();const k=dateKey(),old=actual(k),weight=num('#todayWeight'),cal=num('#todayCalories');
+  if(weight!==null&&weight<=0)return toast('Bitte ein gültiges Gewicht eingeben');
+  db.days[k]={...old,date:k,weight,calories:cal,gymDone:gymDay(k)?$('#todayGymDone').checked:null};
+  save();renderAll();toast('Tag gespeichert');
+}
+
+function renderCalendar(){
+  const title=calendarCursor.toLocaleDateString('de-DE',{month:'long',year:'numeric'});$('#calendarMonthTitle').textContent=title;
+  const first=new Date(calendarCursor.getFullYear(),calendarCursor.getMonth(),1,12);const jsDay=first.getDay()||7;const gridStart=new Date(first);gridStart.setDate(first.getDate()-(jsDay-1));
+  const cells=[];
+  for(let i=0;i<42;i++){
+    const d=new Date(gridStart);d.setDate(gridStart.getDate()+i);const k=dateKey(d),inMonth=d.getMonth()===calendarCursor.getMonth(),today=k===dateKey(),sel=k===selectedDate;
+    const cs=calorieStatus(k),gs=gymStatus(k),hasW=validWeight(actual(k).weight);
+    const marks=[];if(hasNum(actual(k).calories))marks.push(`<i class="cal ${cs}"></i>`);if(gymDay(k))marks.push(`<i class="gym ${gs}"></i>`);if(hasW)marks.push('<i class="weight"></i>');
+    cells.push(`<button type="button" class="calendar-day ${inMonth?'':'out'} ${today?'today':''} ${sel?'selected':''}" data-calendar-date="${k}"><span>${d.getDate()}</span><span class="day-markers">${marks.join('')}</span></button>`);
+  }
+  $('#calendarGrid').innerHTML=cells.join('');
+  $$('[data-calendar-date]').forEach(b=>b.addEventListener('click',()=>{selectedDate=b.dataset.calendarDate;renderCalendar();renderSelectedDay()}));
+  renderSelectedDay();renderSeriesList('#seriesList',false);
+}
+function renderSelectedDay(){
+  const k=selectedDate,d=actual(k),plan=plannedWeight(k),model=calorieModelWeight(k),weight=validWeight(d.weight)?+d.weight:null;
+  const diff=weight!==null&&hasNum(plan)?weight-plan:null;let status={type:'neutral',text:'Keine Gewichtsdaten'};
+  if(diff!==null)status=Math.abs(diff)<=.15?{type:'good',text:'Im Plan'}:diff<0?{type:'good',text:`${fmt(Math.abs(diff),1)} kg vor Plan`}:{type:'bad',text:`${fmt(diff,1)} kg hinter Plan`};
+  $('#selectedDayTitle').textContent=formatDate(k,{weekday:'long',day:'2-digit',month:'long'});
+  const gym=gymDay(k),gs=gymStatus(k);
+  $('#selectedDayCard').innerHTML=`<div class="selected-day-top"><strong>${formatDate(k,{day:'2-digit',month:'2-digit',year:'numeric'})}</strong><span class="status-pill ${status.type}">${status.text}</span></div><div class="selected-values"><div><span>Soll</span><strong>${hasNum(plan)?fmt(plan,1)+' kg':'–'}</strong></div><div><span>Kalorienmodell</span><strong>${hasNum(model)?fmt(model,1)+' kg':'–'}</strong></div><div><span>Waage</span><strong>${weight!==null?fmt(weight,1)+' kg':'–'}</strong></div></div><div class="history-meta"><span class="status-text ${calorieStatus(k)}">${hasNum(d.calories)?fmt(d.calories)+' kcal':'Keine Kalorien'}</span>${gym?`<span class="status-text ${gs==='open'?'neutral':gs}">${gs==='good'?'Training erledigt':gs==='bad'?'Training verpasst':'Training offen'}</span>`:''}</div><div class="selected-actions"><button class="edit" type="button" data-edit-selected>Tag bearbeiten</button>${gym?`<button class="training" type="button" data-toggle-training>${d.gymDone===true?'Als offen markieren':'Training erledigt'}</button><button class="edit" type="button" data-edit-training>Termin</button>`:''}</div>`;
+  $('[data-edit-selected]')?.addEventListener('click',()=>openDayEditor(k));
+  $('[data-toggle-training]')?.addEventListener('click',()=>{db.days[k]={...d,date:k,gymDone:d.gymDone===true?false:true};save();renderAll();toast('Training aktualisiert')});
+  $('[data-edit-training]')?.addEventListener('click',()=>{const s=gymOccurrences(k)[0];if(!s)return;if(s.type==='once')openSeriesEditor(s.id);else openRecurringEditor(s,k)});
+}
+
+function renderSeriesList(selector,includeUpcoming=true){
+  const el=$(selector);if(!el)return;
+  const series=[...db.gym.series].filter(s=>!s.end||s.end>=dateKey()).sort((a,b)=>(a.start||a.date||'').localeCompare(b.start||b.date||''));
+  if(!series.length){el.innerHTML='<div class="empty-state">Noch keine Trainingsserie geplant.</div>';return}
+  el.innerHTML=series.map(s=>{
+    const start=s.type==='once'?s.date:s.start;const recurring=s.type==='weekly';const detail=recurring?`Wöchentlich · ab ${formatDate(start,{day:'2-digit',month:'2-digit'})}`:`Einmalig · ${formatDate(start,{day:'2-digit',month:'2-digit'})}`;
+    return `<div class="series-item"><div class="series-icon">${svgIcon('gym')}</div><div class="body"><strong>${s.name||'Training'}</strong><small>${detail}${s.time?` · ${s.time}`:''}${hasNum(s.calories)?` · ${fmt(s.calories)} kcal`:''}</small></div><button type="button" data-series-id="${s.id}">Bearbeiten</button></div>`;
+  }).join('');
+  $$(`${selector} [data-series-id]`).forEach(b=>b.addEventListener('click',()=>openSeriesEditor(b.dataset.seriesId)));
+}
+
+function renderHistory(){
+  const gs=gymWeekStreak(),cs=calorieStreak();
+  $('#streakCards').innerHTML=`
+    <div class="streak-card cal"><div class="streak-icon">${svgIcon('calories')}</div><span>Kalorien-Serie</span><strong>${cs} ${cs===1?'Tag':'Tage'}</strong><small>Ein Tag bleibt grün bis einschließlich +100 kcal über deinem Ziel.</small></div>
+    <div class="streak-card gym"><div class="streak-icon">${svgIcon('gym')}</div><span>Gym-Serie</span><strong>${gs.weeks} ${gs.weeks===1?'Woche':'Wochen'}</strong><small>${gs.current.planned?`${gs.current.done}/${gs.current.planned} geplante Trainings diese Woche erledigt.`:'Diese Woche ist kein Training geplant.'}</small></div>`;
+  const entries=Object.values(db.days).filter(d=>hasNum(d.calories)||validWeight(d.weight)||d.gymDone!==undefined&&d.gymDone!==null).sort((a,b)=>b.date.localeCompare(a.date));
+  $('#historyList').innerHTML=entries.length?entries.map(d=>historyCard(d)).join(''):'<div class="empty-state">Noch keine Einträge vorhanden.</div>';
+  $$('#historyList [data-edit-day]').forEach(b=>b.addEventListener('click',()=>openDayEditor(b.dataset.editDay)));
+}
+function historyCard(d){
+  const k=d.date,plan=plannedWeight(k),model=calorieModelWeight(k),weight=validWeight(d.weight)?+d.weight:null,diff=weight!==null&&hasNum(plan)?weight-plan:null;
+  const planText=diff===null?'Kein Vergleich':Math.abs(diff)<=.15?'Im Plan':diff<0?`${fmt(Math.abs(diff),1)} kg vor dem Plan`:`${fmt(diff,1)} kg hinter dem Plan`;
+  const planType=diff===null?'neutral':diff<=.15?'good':'bad',cs=calorieStatus(k),gs=gymStatus(k);
+  return `<article class="history-item"><div class="history-head"><div><h3>${formatDate(k,{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric'})}</h3><div class="history-meta"><span class="status-text ${cs}">${hasNum(d.calories)?fmt(d.calories)+' kcal':'Keine Kalorien'}</span>${gymDay(k)?`<span class="status-text ${gs==='open'?'neutral':gs}">${gs==='good'?'Training erledigt':gs==='bad'?'Training verpasst':'Training offen'}</span>`:''}</div></div><span class="status-pill ${planType}">${planText}</span></div><div class="history-values"><div><span>Soll</span><strong>${hasNum(plan)?fmt(plan,1)+' kg':'–'}</strong></div><div><span>Kalorienmodell</span><strong>${hasNum(model)?fmt(model,1)+' kg':'–'}</strong></div><div><span>Waage</span><strong>${weight!==null?fmt(weight,1)+' kg':'–'}</strong></div></div><div class="history-footer"><div><span class="tag ${cs}">Kalorien ${cs==='good'?'im Ziel':cs==='bad'?'über Ziel':'offen'}</span>${gymDay(k)?` <span class="tag ${gs==='open'?'neutral':gs}">Training ${gs==='good'?'erledigt':gs==='bad'?'verpasst':'offen'}</span>`:''}</div><button type="button" data-edit-day="${k}">Bearbeiten</button></div></article>`;
+}
+
+function renderAnalysis(){renderAnalysisProgress();renderForecast()}
+function renderAnalysisProgress(){
+  $$('#chartRanges [data-range]').forEach(b=>b.classList.toggle('active',b.dataset.range===chartRange));
+  const today=dateKey();let start;
+  if(chartRange==='all')start=db.plan.startDate||addDays(today,-30);else start=addDays(today,-(+chartRange-1));
+  if(db.plan.startDate&&start<db.plan.startDate)start=db.plan.startDate;
+  const points=buildChartSeries(start,today);
+  $('#weightChart').innerHTML=weightChartSvg(points,start,today);
+  const startW=validWeight(db.plan.startWeight)?+db.plan.startWeight:null,scale=latestWeight(),model=calorieModelWeight();
+  const scaleLoss=startW!==null&&scale!==null?startW-scale:null,modelLoss=startW!==null&&hasNum(model)?startW-model:null;
+  $('#analysisLossCards').innerHTML=`<div class="loss-card actual"><span>Waage (tatsächlich)</span><strong>${scaleLoss===null?'–':signed(-scaleLoss,1,' kg')}</strong><small>${scale!==null?`von ${fmt(startW,1)} auf ${fmt(scale,1)} kg · ${fmt(progressPct(scale))}% des Ziels`:'Noch kein Waagenwert'}</small><div class="progress-bar actual"><i style="width:${progressPct(scale)}%;background:linear-gradient(90deg,var(--green),var(--green-2))"></i></div></div><div class="loss-card model"><span>Kalorienmodell</span><strong>${modelLoss===null?'–':signed(-modelLoss,1,' kg')}</strong><small>${hasNum(model)?`von ${fmt(startW,1)} auf ${fmt(model,1)} kg · ${fmt(progressPct(model))}% des Ziels`:'Noch keine Berechnung'}</small><div class="progress-bar"><i style="width:${progressPct(model)}%;background:linear-gradient(90deg,var(--blue),var(--blue-2))"></i></div></div>`;
+  const diff=scale!==null&&hasNum(model)?scale-model:null;
+  $('#comparisonCard').innerHTML=`<div class="comparison-main"><div><span>Aktueller Abstand</span><strong>${diff===null?'–':signed(diff,1,' kg')}</strong></div><div><span>${diff===null?'Noch keine Vergleichsdaten':diff>0?'Waage über Modell':diff<0?'Waage unter Modell':'Gleichstand'}</span></div></div><p>${diff===null?'Sobald Gewicht und Kalorienmodell verfügbar sind, siehst du hier den Abstand.':`Die Waage kann kurzfristig durch Wasser, Salz, Glykogen und Magen-/Darminhalt vom Energiebilanz-Modell abweichen. Entscheidend ist die Entwicklung über mehrere Tage.`}</p>`;
+}
+function buildChartSeries(start,end){
+  const rows=[];for(let k=start;k<=end;k=addDays(k,1)){rows.push({date:k,plan:plannedWeight(k),model:calorieModelWeight(k),actual:validWeight(actual(k).weight)?+actual(k).weight:null})}return rows;
+}
+function weightChartSvg(rows,start,end){
+  const vals=[];rows.forEach(r=>{['plan','model','actual'].forEach(k=>{if(hasNum(r[k]))vals.push(+r[k])})});if(!vals.length)return'<div class="chart-empty">Noch nicht genug Daten für einen Verlauf.</div>';
+  const w=660,h=250,pad={l:38,r:15,t:18,b:32},min=Math.floor(Math.min(...vals,(+db.plan.goalWeight||999))-1),max=Math.ceil(Math.max(...vals)+1),span=Math.max(1,max-min),x=i=>pad.l+(i/(Math.max(1,rows.length-1)))*(w-pad.l-pad.r),y=v=>pad.t+(max-v)/span*(h-pad.t-pad.b);
+  const pathFor=key=>{let d='',started=false;rows.forEach((r,i)=>{if(!hasNum(r[key])){started=false;return}const cmd=started?'L':'M';d+=`${cmd}${x(i).toFixed(1)},${y(+r[key]).toFixed(1)} `;started=true});return d};
+  const grid=[0,.25,.5,.75,1].map(t=>{const yy=pad.t+t*(h-pad.t-pad.b),val=max-t*span;return `<line x1="${pad.l}" y1="${yy}" x2="${w-pad.r}" y2="${yy}" stroke="#e5ebf2"/><text x="4" y="${yy+4}" font-size="10" fill="#8391a3">${fmt(val,0)}</text>`}).join('');
+  const labels=[0,Math.floor((rows.length-1)/2),rows.length-1].filter((v,i,a)=>a.indexOf(v)===i).map(i=>`<text x="${x(i)}" y="${h-8}" text-anchor="middle" font-size="9" fill="#8391a3">${formatDate(rows[i].date,{day:'2-digit',month:'2-digit'})}</text>`).join('');
+  return `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="Gewichtsverlauf">${grid}<path d="${pathFor('plan')}" fill="none" stroke="#9aa8b8" stroke-width="2" stroke-dasharray="5 5"/><path d="${pathFor('model')}" fill="none" stroke="#1677ff" stroke-width="2.4"/><path d="${pathFor('actual')}" fill="none" stroke="#18a865" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>${rows.map((r,i)=>hasNum(r.actual)?`<circle cx="${x(i)}" cy="${y(+r.actual)}" r="3.5" fill="#fff" stroke="#18a865" stroke-width="2"/>`:'').join('')}${labels}</svg><div class="chart-legend"><span><i class="legend-line actual"></i>Waage</span><span><i class="legend-line model"></i>Kalorienmodell</span><span><i class="legend-line plan"></i>Soll</span></div>`;
+}
+
+function renderForecast(){
+  $$('#forecastButtons [data-days]').forEach(b=>b.classList.toggle('active',forecastDays!==null&&+b.dataset.days===forecastDays));
+  let target;if(forecastDays!==null){target=addDays(dateKey(),forecastDays);$('#forecastDate').value=target}else target=$('#forecastDate').value||addDays(dateKey(),30);
+  if(target<dateKey())target=dateKey();
+  const f=forecastWeight(target),m=forecastModelWeight(target),p=plannedWeight(target),base=currentForecastBase(),change=validWeight(f)&&validWeight(base)?f-base:null,days=Math.max(0,daysBetween(dateKey(),target));
+  $('#forecastHero').innerHTML=`<span class="forecast-label">Prognose in ${days} ${days===1?'Tag':'Tagen'} · ${formatDate(target)}</span><div class="forecast-weight">${validWeight(f)?fmt(f,1)+' kg':'–'}</div><span class="forecast-change ${change!==null&&change>0?'bad':''}">${change===null?'Noch keine Prognose':`${signed(change,1,' kg')} gegenüber heute`}</span><div class="forecast-note">Die Prognose startet beim geglätteten Waagengewicht und setzt voraus, dass du deinen aktuellen Kalorien- und Trainingsplan künftig einhältst. Das Kalorienmodell bleibt separat sichtbar.</div>`;
+  $('#forecastChart').innerHTML=forecastChartSvg(target);
+  const qs=[7,14,30,60];$('#forecastQuick').innerHTML=qs.map(n=>{const wk=forecastWeight(addDays(dateKey(),n)),chg=validWeight(wk)&&validWeight(base)?wk-base:null;return `<div class="forecast-mini"><span>in ${n} Tagen</span><strong>${validWeight(wk)?fmt(wk,1)+' kg':'–'}</strong><small>${chg===null?'–':signed(chg,1,' kg')}</small></div>`}).join('');
+}
+function forecastChartSvg(target){
+  const today=dateKey(),total=Math.max(1,daysBetween(today,target)),steps=Math.min(90,total),rows=[];
+  for(let i=0;i<=steps;i++){const k=addDays(today,Math.round(i*total/steps));rows.push({date:k,actual:forecastWeight(k),model:forecastModelWeight(k),plan:plannedWeight(k)})}
+  if(!rows.length||!validWeight(rows.at(-1).actual))return'<div class="chart-empty">Noch keine Prognose möglich.</div>';
+  const vals=[];rows.forEach(r=>['actual','model','plan'].forEach(k=>{if(hasNum(r[k]))vals.push(+r[k])}));if(validWeight(db.plan.goalWeight))vals.push(+db.plan.goalWeight);if(!vals.length)return'<div class="chart-empty">Noch keine Prognose möglich.</div>';
+  const w=660,h=240,pad={l:38,r:15,t:18,b:32},min=Math.floor(Math.min(...vals)-1),max=Math.ceil(Math.max(...vals)+1),span=Math.max(1,max-min),x=i=>pad.l+(i/(rows.length-1))*(w-pad.l-pad.r),y=v=>pad.t+(max-v)/span*(h-pad.t-pad.b),path=key=>rows.map((r,i)=>`${i?'L':'M'}${x(i).toFixed(1)},${y(+r[key]).toFixed(1)}`).join(' ');
+  const grid=[0,.25,.5,.75,1].map(t=>{const yy=pad.t+t*(h-pad.t-pad.b),val=max-t*span;return `<line x1="${pad.l}" y1="${yy}" x2="${w-pad.r}" y2="${yy}" stroke="#e5ebf2"/><text x="4" y="${yy+4}" font-size="10" fill="#8391a3">${fmt(val,0)}</text>`}).join('');
+  const goal=validWeight(db.plan.goalWeight)?`<line x1="${pad.l}" y1="${y(+db.plan.goalWeight)}" x2="${w-pad.r}" y2="${y(+db.plan.goalWeight)}" stroke="#18a865" stroke-width="1.5" stroke-dasharray="4 5"/>`:'';
+  return `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="Gewichtsprognose">${grid}${goal}<path d="${path('plan')}" fill="none" stroke="#9aa8b8" stroke-width="2" stroke-dasharray="5 5"/><path d="${path('model')}" fill="none" stroke="#1677ff" stroke-width="2"/><path d="${path('actual')}" fill="none" stroke="#18a865" stroke-width="3"/><circle cx="${x(rows.length-1)}" cy="${y(+rows.at(-1).actual)}" r="5" fill="#18a865"/><text x="${x(rows.length-1)-5}" y="${Math.max(14,y(+rows.at(-1).actual)-10)}" text-anchor="end" font-size="11" font-weight="700" fill="#187a4d">${fmt(rows.at(-1).actual,1)} kg</text><text x="${pad.l}" y="${h-8}" font-size="9" fill="#8391a3">Heute</text><text x="${w-pad.r}" y="${h-8}" text-anchor="end" font-size="9" fill="#8391a3">${formatDate(target,{day:'2-digit',month:'2-digit'})}</text></svg><div class="chart-legend"><span><i class="legend-line actual"></i>Waagen-Prognose</span><span><i class="legend-line model"></i>Kalorienmodell</span><span><i class="legend-line plan"></i>Ursprünglicher Plan</span></div>`;
+}
+
+function renderPlan(){
+  const p=db.plan;$('#startDate').value=p.startDate||dateKey();$('#startWeight').value=p.startWeight??'';$('#goalWeight').value=p.goalWeight??'';$('#maintenanceCalories').value=p.maintenanceCalories??'';$('#plannedCalories').value=p.plannedCalories??'';
+  if(!$('#trainingDate').value)$('#trainingDate').value=dateKey();
+  $('#trainingCalories').value=db.gym.calories??300;
+  const def=planBaseDeficit(),weekly=def*7/7700,orig=originalGoalDate(),cur=currentGoalDate(),shift=goalShiftDays();
+  $('#planSummary').innerHTML=`<div class="summary-box"><span>Basisdefizit</span><strong>${fmt(def)} kcal / Tag</strong></div><div class="summary-box"><span>Tempo ohne Gym</span><strong>≈ ${fmt(weekly,2)} kg / Woche</strong></div><div class="summary-box"><span>Geplanter Zieltermin</span><strong>${orig?formatDate(orig):'–'}</strong></div><div class="summary-box ${shift!==null&&shift>0?'bad':'good'}"><span>Aktueller Zieltermin</span><strong>${cur?formatDate(cur):'–'}</strong></div>`;
+  renderSeriesList('#trainingUpcoming');
+}
+function savePlan(e){
+  e.preventDefault();const p={startDate:$('#startDate').value,startWeight:num('#startWeight'),goalWeight:num('#goalWeight'),maintenanceCalories:num('#maintenanceCalories'),plannedCalories:num('#plannedCalories')};
+  if(!p.startDate||!validWeight(p.startWeight)||!validWeight(p.goalWeight)||!hasNum(p.maintenanceCalories)||!hasNum(p.plannedCalories))return toast('Bitte den Plan vollständig ausfüllen');
+  if(p.goalWeight>=p.startWeight)return toast('Zielgewicht muss unter dem Startgewicht liegen');
+  db.plan=p;save();renderAll();toast('Plan gespeichert');
+}
+function addTrainingFromPlan(e){
+  e.preventDefault();const date=$('#trainingDate').value,name=$('#trainingName').value.trim()||'Training',time=$('#trainingTime').value,repeat=$('#trainingRepeat').value,cal=num('#trainingCalories');
+  if(!date)return toast('Bitte ein Startdatum wählen');
+  const rec={id:uid(),type:repeat,name,time,calories:hasNum(cal)?cal:(+db.gym.calories||300)};
+  if(repeat==='once')rec.date=date;else Object.assign(rec,{start:date,end:null,weekday:parseDate(date).getDay()});
+  db.gym.calories=rec.calories;db.gym.series.push(rec);save();renderAll();toast(repeat==='weekly'?'Trainingsserie hinzugefügt':'Training hinzugefügt');
+}
+function openNewTrainingModal(){
+  openModal(`<h2>Training hinzufügen</h2><p>Lege einen einzelnen Termin oder eine wöchentliche Serie an.</p><form id="modalNewTraining" class="modal-form"><label>Name<input id="mTrainName" value="Krafttraining" maxlength="40"></label><label>Startdatum<input id="mTrainDate" type="date" value="${selectedDate||dateKey()}"></label><label>Uhrzeit<input id="mTrainTime" type="time" value="18:00"></label><label>Wiederholung<select id="mTrainRepeat"><option value="weekly">Jede Woche</option><option value="once">Einmalig</option></select></label><label>Verbrauch (kcal)<input id="mTrainCal" type="number" value="${fmt(db.gym.calories||300)}" min="0"></label><button class="primary-button" type="submit">Hinzufügen</button></form>`);
+  $('#modalNewTraining').addEventListener('submit',e=>{e.preventDefault();const date=$('#mTrainDate').value,repeat=$('#mTrainRepeat').value,rec={id:uid(),type:repeat,name:$('#mTrainName').value.trim()||'Training',time:$('#mTrainTime').value,calories:+$('#mTrainCal').value||0};if(repeat==='once')rec.date=date;else Object.assign(rec,{start:date,end:null,weekday:parseDate(date).getDay()});db.gym.series.push(rec);db.gym.calories=rec.calories;save();closeModal();renderAll();toast('Training hinzugefügt')});
+}
+function openSeriesEditor(id){
+  const s=db.gym.series.find(x=>x.id===id);if(!s)return;
+  if(s.type==='once'){
+    openModal(`<h2>Training bearbeiten</h2><p>Einmaliger Termin</p><form id="editOnce" class="modal-form"><label>Name<input id="eoName" value="${escapeHtml(s.name||'Training')}"></label><label>Datum<input id="eoDate" type="date" value="${s.date}"></label><label>Uhrzeit<input id="eoTime" type="time" value="${s.time||'18:00'}"></label><label>Verbrauch (kcal)<input id="eoCal" type="number" value="${hasNum(s.calories)?s.calories:db.gym.calories}"></label><button class="primary-button" type="submit">Speichern</button><button id="deleteOnce" class="danger-button" type="button">Termin löschen</button></form>`);
+    $('#editOnce').addEventListener('submit',e=>{e.preventDefault();s.name=$('#eoName').value.trim()||'Training';s.date=$('#eoDate').value;s.time=$('#eoTime').value;s.calories=+$('#eoCal').value||0;save();closeModal();renderAll();toast('Training geändert')});
+    $('#deleteOnce').addEventListener('click',()=>{db.gym.series=db.gym.series.filter(x=>x.id!==id);save();closeModal();renderAll();toast('Training gelöscht')});return;
+  }
+  const occurrence=nextOccurrenceForSeries(s,dateKey())||s.start;
+  openRecurringEditor(s,occurrence);
+}
+function nextOccurrenceForSeries(s,from){for(let k=from,i=0;i<370;i++,k=addDays(k,1))if(gymOccurrences(k).some(x=>x.id===s.id))return k;return null}
+function openRecurringEditor(s,k){
+  openModal(`<h2>Trainingsserie bearbeiten</h2><p>Ausgewählter Termin: ${formatDate(k,{weekday:'long',day:'2-digit',month:'long',year:'numeric'})}</p><div class="modal-form"><label>Name<input id="erName" value="${escapeHtml(s.name||'Training')}"></label><label>Neues Datum<input id="erDate" type="date" value="${k}"></label><label>Uhrzeit<input id="erTime" type="time" value="${s.time||'18:00'}"></label><label>Verbrauch (kcal)<input id="erCal" type="number" value="${hasNum(s.calories)?s.calories:db.gym.calories}"></label><div class="modal-actions"><button id="saveFuture" class="secondary-button" type="button">Diesen + zukünftige ändern</button><button id="moveOne" class="secondary-button" type="button">Nur diesen Termin ändern</button><button id="deleteOne" class="danger-button" type="button">Nur diesen Termin löschen</button><button id="deleteFuture" class="danger-button" type="button">Diesen + zukünftige löschen</button></div></div>`);
+  $('#saveFuture').addEventListener('click',()=>{const nk=$('#erDate').value;s.end=prevDay(k);db.gym.series.push({id:uid(),type:'weekly',start:nk,end:null,weekday:parseDate(nk).getDay(),name:$('#erName').value.trim()||'Training',time:$('#erTime').value,calories:+$('#erCal').value||0});save();closeModal();renderAll();toast('Zukünftige Serie geändert')});
+  $('#moveOne').addEventListener('click',()=>{const nk=$('#erDate').value;if(!isSkipped(s.id,k))db.gym.skips.push({seriesId:s.id,date:k});db.gym.series.push({id:uid(),type:'once',date:nk,name:$('#erName').value.trim()||'Training',time:$('#erTime').value,calories:+$('#erCal').value||0});save();closeModal();renderAll();toast('Termin geändert')});
+  $('#deleteOne').addEventListener('click',()=>{if(!isSkipped(s.id,k))db.gym.skips.push({seriesId:s.id,date:k});save();closeModal();renderAll();toast('Termin gelöscht')});
+  $('#deleteFuture').addEventListener('click',()=>{s.end=prevDay(k);save();closeModal();renderAll();toast('Zukünftige Termine gelöscht')});
+}
+function openDayEditor(k){
+  const d=actual(k),gym=gymDay(k);openModal(`<h2>${formatDate(k,{weekday:'long',day:'2-digit',month:'long'})}</h2><p>Trage Gewicht und Kalorien ein. Ein Kalorientag bleibt bis einschließlich +100 kcal im grünen Bereich.</p><form id="dayEditor" class="modal-form"><label>Gewicht (kg)<input id="edWeight" type="number" step="0.1" value="${validWeight(d.weight)?d.weight:''}"></label><label>Kalorien<input id="edCalories" type="number" value="${hasNum(d.calories)?d.calories:''}"></label>${gym?`<label class="toggle-row"><span>Training erledigt</span><input id="edGym" type="checkbox" ${d.gymDone===true?'checked':''}><i></i></label>`:''}<button class="primary-button" type="submit">Speichern</button><button id="deleteDay" class="danger-button" type="button">Tag löschen</button></form>`);
+  $('#dayEditor').addEventListener('submit',e=>{e.preventDefault();const w=+$('#edWeight').value;if($('#edWeight').value&&w<=0)return toast('Gewicht muss größer als 0 sein');db.days[k]={...d,date:k,weight:$('#edWeight').value?+$('#edWeight').value:null,calories:$('#edCalories').value?+$('#edCalories').value:null,gymDone:gym?$('#edGym').checked:null};save();closeModal();renderAll();toast('Tag gespeichert')});
+  $('#deleteDay').addEventListener('click',()=>{delete db.days[k];save();closeModal();renderAll();toast('Tag gelöscht')});
+}
+function escapeHtml(s){return String(s).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
+
+function exportData(){const blob=new Blob([JSON.stringify(db,null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`WesGym-5.0-Backup-${dateKey()}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000)}
+function importData(e){const file=e.target.files?.[0];if(!file)return;const r=new FileReader();r.onload=()=>{try{const x=JSON.parse(r.result);if(!x||typeof x!=='object')throw new Error();localStorage.setItem(KEY,JSON.stringify(x));location.reload()}catch{toast('Ungültige Backup-Datei')}};r.readAsText(file)}
+function resetData(){if(!confirm('Alle WesGym-Daten wirklich löschen?'))return;localStorage.removeItem(KEY);location.reload()}
+
+document.addEventListener('DOMContentLoaded',init);
+})();

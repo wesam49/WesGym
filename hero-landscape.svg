@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 520" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#eaf5ff"/>
+      <stop offset="0.6" stop-color="#f7fbff"/>
+      <stop offset="1" stop-color="#edf7f1"/>
+    </linearGradient>
+    <linearGradient id="mount1" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#c9dce8"/><stop offset="1" stop-color="#aebfcd"/></linearGradient>
+    <linearGradient id="mount2" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#91b2c4"/><stop offset="1" stop-color="#6f94a8"/></linearGradient>
+    <linearGradient id="hill" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#8fc3a6"/><stop offset="1" stop-color="#5c9b7d"/></linearGradient>
+    <filter id="blur"><feGaussianBlur stdDeviation="16"/></filter>
+  </defs>
+  <rect width="1200" height="520" fill="url(#sky)"/>
+  <circle cx="870" cy="120" r="88" fill="#fff7dc" opacity=".8" filter="url(#blur)"/>
+  <path d="M0 330 L170 205 300 315 455 155 650 330 785 205 945 330 1080 230 1200 335 1200 520 0 520Z" fill="url(#mount1)"/>
+  <path d="M0 392 L190 280 340 365 535 225 705 385 875 245 1035 355 1200 280 1200 520 0 520Z" fill="url(#mount2)" opacity=".92"/>
+  <path d="M0 430 C180 365 285 435 430 392 C575 348 700 430 855 380 C1010 330 1095 390 1200 350 L1200 520 0 520Z" fill="url(#hill)"/>
+  <path d="M0 470 C220 440 395 490 575 450 C740 414 930 470 1200 420 L1200 520 0 520Z" fill="#4c826a" opacity=".82"/>
+  <path d="M220 430 C360 410 500 432 650 420 C795 408 925 395 1060 405" fill="none" stroke="#e8f4ef" stroke-width="12" stroke-linecap="round" opacity=".9"/>
+  <g fill="#ffffff" stroke="#3a9b72" stroke-width="7">
+    <circle cx="318" cy="421" r="14"/><circle cx="646" cy="420" r="14"/><circle cx="960" cy="402" r="14"/>
+  </g>
+  <path d="M960 402 v-80" stroke="#60798d" stroke-width="7" stroke-linecap="round"/>
+  <path d="M965 322 h58 l-22 18 22 18 h-58z" fill="#60798d"/>
+</svg>
