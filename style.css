@@ -24,3 +24,26 @@ main{padding:10px 14px 30px}.page{display:none}.page.active{display:block}.secti
 .modal{position:fixed;inset:0;z-index:100}.modal-shade{position:absolute;inset:0;background:rgba(15,23,42,.34);backdrop-filter:blur(4px)}.modal-sheet{position:absolute;left:50%;bottom:0;transform:translateX(-50%);width:min(760px,100%);max-height:88vh;overflow:auto;background:#fff;border-radius:30px 30px 0 0;padding:10px 18px calc(24px + var(--safe-bottom));box-shadow:0 -18px 50px rgba(15,23,42,.15)}.sheet-handle{width:42px;height:5px;border-radius:999px;background:#d4dbe4;margin:0 auto 17px}.modal-sheet h2{font-size:23px;margin:0 0 6px}.modal-sheet p{color:var(--muted);font-size:12px;line-height:1.5}.modal-form{display:grid;gap:11px;margin-top:15px}.modal-form label{font-size:11px;color:var(--muted);font-weight:760}.modal-form input,.modal-form select{width:100%;min-height:48px;margin-top:5px;border:1px solid var(--line);border-radius:14px;background:#f8fafc;padding:11px 12px;font-size:16px}.modal-actions{display:grid;gap:8px;margin-top:13px}.toast{position:fixed;left:50%;bottom:calc(82px + var(--safe-bottom));transform:translateX(-50%);z-index:160;background:#111827;color:#fff;padding:11px 15px;border-radius:999px;font-size:12px;font-weight:720;box-shadow:0 10px 28px rgba(15,23,42,.2);white-space:nowrap}
 @media(max-width:520px){main{padding-left:10px;padding-right:10px}.hero-visual{min-height:390px;padding:20px 16px 15px}.hero-copy h2{font-size:31px}.journey-panel{margin-top:145px}.progress-pair{grid-template-columns:1fr 1fr}.progress-main strong{font-size:23px}.ring{width:58px;height:58px}.ring::after{width:43px;height:43px}.section-block{padding:15px}.metric-grid{grid-template-columns:repeat(3,1fr)}.selected-values{gap:6px}.forecast-quick{grid-template-columns:1fr 1fr}.history-values{gap:6px}.form-grid{grid-template-columns:1fr 1fr}}
 @media(max-width:370px){.hero-copy h2{font-size:28px}.progress-pair{grid-template-columns:1fr}.entry-card{grid-template-columns:1fr}.entry-field{grid-column:1/-1}.metric-grid{grid-template-columns:1fr 1fr}.journey-stats{grid-template-columns:1fr 1fr}.journey-stat.end{text-align:left}.selected-values{grid-template-columns:1fr 1fr}.selected-values>div:last-child{grid-column:1/-1}.history-values{grid-template-columns:1fr 1fr}.history-values>div:last-child{grid-column:1/-1}.loss-grid{grid-template-columns:1fr}.form-grid,.form-grid.two{grid-template-columns:1fr}.bottom-nav small{font-size:8px}.bottom-nav button{min-width:0}}
+
+/* 5.1: Sollgewicht + Datumsrechner */
+.section-subtitle{margin:18px 0 10px;padding-top:15px;border-top:1px solid var(--line)}
+.today-comparison{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-bottom:4px}
+.comparison-tile{min-width:0;padding:13px;border-radius:18px;border:1px solid var(--line);background:#f8fafc}
+.comparison-tile.plan{background:linear-gradient(145deg,#f7f9fc,#eef2f7)}
+.comparison-tile.actual{background:linear-gradient(145deg,#f2fbf6,#f9fdfb);border-color:#dfeee6}
+.comparison-tile.model{background:linear-gradient(145deg,#f2f7ff,#fbfdff);border-color:#e0eaff}
+.comparison-tile span{display:block;font-size:10px;color:var(--muted);font-weight:780}
+.comparison-tile strong{display:block;margin-top:5px;font-size:20px;letter-spacing:-.45px}
+.comparison-tile small{display:block;margin-top:4px;font-size:9px;line-height:1.35;color:#66788c}
+.date-calculator-result{margin-top:12px}
+.date-calculator-hero{padding:16px;border-radius:20px;background:linear-gradient(135deg,#f2fbf6,#f3f8ff);border:1px solid #deece6}
+.date-calculator-hero span{display:block;font-size:11px;color:var(--muted);font-weight:760}
+.date-calculator-hero strong{display:block;margin-top:5px;font-size:38px;letter-spacing:-1.25px}
+.date-calculator-hero small{display:block;margin-top:5px;color:#5d7084;font-size:10px;line-height:1.45}
+.date-calculator-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
+.date-calculator-grid>div{padding:11px;border-radius:15px;background:#f7f9fc;border:1px solid var(--line);min-width:0}
+.date-calculator-grid span{display:block;font-size:9px;color:var(--muted)}
+.date-calculator-grid strong{display:block;margin-top:4px;font-size:15px}
+.date-calculator-grid small{display:block;margin-top:3px;font-size:8.5px;line-height:1.35;color:#7a8999}
+.date-calculator-result>p{margin:9px 2px 0;color:var(--muted);font-size:10px;line-height:1.45}
+@media(max-width:430px){.today-comparison{grid-template-columns:1fr 1fr}.comparison-tile.model{grid-column:1/-1}.date-calculator-grid{grid-template-columns:1fr 1fr}.date-calculator-grid>div:last-child{grid-column:1/-1}}

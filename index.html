@@ -39,7 +39,9 @@
       </section>
 
       <section class="section-block">
-        <div class="section-title-row"><div><span class="section-kicker">Fortschritt seit Start</span><h2>Waage und Kalorienmodell</h2></div></div>
+        <div class="section-title-row"><div><span class="section-kicker">Heute im Vergleich</span><h2>Soll, Waage und Kalorienmodell</h2></div></div>
+        <div id="homeTodayComparison" class="today-comparison"></div>
+        <div class="section-subtitle"><span class="section-kicker">Fortschritt seit Start</span></div>
         <div id="homeProgress" class="progress-pair"></div>
       </section>
 
@@ -104,6 +106,10 @@
 
       <div id="analysisProgress" class="analysis-pane active">
         <section class="section-block">
+          <div class="section-title-row"><div><span class="section-kicker">Heute</span><h2>Soll, Waage und Kalorienmodell</h2></div></div>
+          <div id="analysisTodayComparison" class="today-comparison"></div>
+        </section>
+        <section class="section-block">
           <div class="section-title-row"><div><span class="section-kicker">Gewichtsverlauf</span><h2>Ist, Modell und Soll</h2></div></div>
           <div class="range-chips" id="chartRanges"><button data-range="30" class="active" type="button">30T</button><button data-range="90" type="button">90T</button><button data-range="180" type="button">6M</button><button data-range="all" type="button">Alle</button></div>
           <div id="weightChart" class="chart-card"></div>
@@ -115,6 +121,11 @@
         <section class="section-block">
           <div class="section-title-row"><div><span class="section-kicker">Vergleich</span><h2>Waage vs. Kalorienmodell</h2></div></div>
           <div id="comparisonCard" class="comparison-card"></div>
+        </section>
+        <section class="section-block">
+          <div class="section-title-row"><div><span class="section-kicker">Datumsrechner</span><h2>Was wiegst du voraussichtlich?</h2></div></div>
+          <label class="date-input-row calculator-date-row"><span>Datum auswählen</span><input id="weightDateCalculator" type="date"></label>
+          <div id="weightDateResult" class="date-calculator-result"></div>
         </section>
       </div>
 
@@ -132,7 +143,7 @@
 
     <section id="plan" class="page">
       <section class="section-block">
-        <div class="section-title-row"><div><span class="section-kicker">Ziel</span><h2>Dein Weg</h2></div><span class="version-pill">5.0</span></div>
+        <div class="section-title-row"><div><span class="section-kicker">Ziel</span><h2>Dein Weg</h2></div><span class="version-pill">5.1</span></div>
         <form id="planForm" class="plan-form">
           <div class="form-grid">
             <label><span>Startdatum</span><input id="startDate" type="date" required></label>

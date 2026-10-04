@@ -6,7 +6,7 @@ const defaults={
   plan:{startDate:'',startWeight:null,maintenanceCalories:2600,plannedCalories:1800,goalWeight:null},
   days:{},
   gym:{calories:300,weekdays:[],series:[],skips:[]},
-  meta:{version:'5.0'}
+  meta:{version:'5.1'}
 };
 let db=loadDb();
 let calendarCursor=startOfMonth(new Date());
@@ -60,7 +60,7 @@ function migrateOldWeekdays(out){
   });
   out.gym.weekdays=[];
 }
-function save(){db.meta.version='5.0';localStorage.setItem(KEY,JSON.stringify(db))}
+function save(){db.meta.version='5.1';localStorage.setItem(KEY,JSON.stringify(db))}
 
 function isSkipped(seriesId,k){return db.gym.skips.some(x=>x.seriesId===seriesId&&x.date===k)}
 function gymOccurrences(k){
@@ -259,6 +259,7 @@ function bindActions(){
   $('#forecastDate').addEventListener('change',()=>{forecastDays=null;renderForecast()});
   $('#forecastButtons').addEventListener('click',e=>{const b=e.target.closest('[data-days]');if(!b)return;forecastDays=+b.dataset.days;$('#forecastDate').value='';renderForecast()});
   $('#chartRanges').addEventListener('click',e=>{const b=e.target.closest('[data-range]');if(!b)return;chartRange=b.dataset.range;renderAnalysisProgress()});
+  $('#weightDateCalculator').addEventListener('change',renderWeightDateCalculator);
 }
 function renderAll(){renderHome();renderCalendar();renderHistory();renderAnalysis();renderPlan()}
 
@@ -267,6 +268,7 @@ function renderHome(){
   const goal=validWeight(db.plan.goalWeight)?+db.plan.goalWeight:null;
   const scale=latestWeight(dateKey());
   const model=calorieModelWeight(dateKey());
+  const planToday=plannedWeight(dateKey());
   const scalePct=progressPct(scale),modelPct=progressPct(model),status=planStatusToday();
   const target=currentGoalDate(),orig=originalGoalDate(),shift=goalShiftDays();
   const displayCurrent=scale??model;
@@ -284,6 +286,7 @@ function renderHome(){
   const total=start!==null&&goal!==null?start-goal:null;
   const scaleLost=start!==null&&scale!==null?start-scale:null;
   const modelLost=start!==null&&hasNum(model)?start-model:null;
+  $('#homeTodayComparison').innerHTML=todayComparisonHtml(planToday,scale,model);
   $('#homeProgress').innerHTML=`
     ${progressCard('actual','Waage (tatsächlich)',scaleLost,scale,scalePct,total)}
     ${progressCard('model','Kalorienmodell',modelLost,model,modelPct,total)}`;
@@ -301,6 +304,11 @@ function renderHome(){
     <div class="metric-card"><span>Training diese Woche</span><strong>${week.done}/${week.planned}</strong><small>${gs.weeks} ${gs.weeks===1?'Woche':'Wochen'} Gym-Serie</small></div>
     <div class="metric-card ${shift!==null&&shift>0?'bad':'good'}"><span>Zieltermin</span><strong>${target?formatDate(target,{day:'2-digit',month:'2-digit'}):'–'}</strong><small>${orig?`Plan ${formatDate(orig,{day:'2-digit',month:'2-digit'})}`:'Noch kein Zieltermin'}</small></div>`;
 }
+function todayComparisonHtml(plan,scale,model){
+  const scaleDiff=validWeight(scale)&&hasNum(plan)?scale-plan:null;
+  return `<div class="comparison-tile plan"><span>Soll heute</span><strong>${hasNum(plan)?fmt(plan,1)+' kg':'–'}</strong><small>automatisch aus deinem Plan</small></div><div class="comparison-tile actual"><span>Waage</span><strong>${validWeight(scale)?fmt(scale,1)+' kg':'–'}</strong><small>${scaleDiff===null?'letzter echter Wert':Math.abs(scaleDiff)<=.05?'genau im Soll':scaleDiff<0?fmt(Math.abs(scaleDiff),1)+' kg vor Soll':fmt(scaleDiff,1)+' kg über Soll'}</small></div><div class="comparison-tile model"><span>Kalorienmodell</span><strong>${hasNum(model)?fmt(model,1)+' kg':'–'}</strong><small>aus deiner Energiebilanz</small></div>`;
+}
+
 function progressCard(type,label,lost,current,pct,total){
   const remaining=validWeight(current)&&validWeight(db.plan.goalWeight)?Math.max(0,current-(+db.plan.goalWeight)):null;
   return `<div class="progress-card ${type}"><span class="label">${label}</span><div class="progress-main"><div><strong>${lost===null?'–':signed(-lost,1,' kg')}</strong><div class="progress-caption">${validWeight(current)?fmt(current,1)+' kg aktuell':'Noch kein Wert'}</div></div><div class="ring" style="--p:${pct}"><span>${fmt(pct)}%</span></div></div><div class="progress-bar"><i style="width:${pct}%"></i></div><div class="progress-caption">${remaining===null?'–':fmt(remaining,1)+' kg bis zum Ziel'}${hasNum(total)?` · von ${fmt(total,1)} kg Gesamtstrecke`:''}</div></div>`;
@@ -373,12 +381,27 @@ function renderAnalysisProgress(){
   if(db.plan.startDate&&start<db.plan.startDate)start=db.plan.startDate;
   const points=buildChartSeries(start,today);
   $('#weightChart').innerHTML=weightChartSvg(points,start,today);
-  const startW=validWeight(db.plan.startWeight)?+db.plan.startWeight:null,scale=latestWeight(),model=calorieModelWeight();
+  const startW=validWeight(db.plan.startWeight)?+db.plan.startWeight:null,scale=latestWeight(),model=calorieModelWeight(),planToday=plannedWeight(today);
+  $('#analysisTodayComparison').innerHTML=todayComparisonHtml(planToday,scale,model);
   const scaleLoss=startW!==null&&scale!==null?startW-scale:null,modelLoss=startW!==null&&hasNum(model)?startW-model:null;
   $('#analysisLossCards').innerHTML=`<div class="loss-card actual"><span>Waage (tatsächlich)</span><strong>${scaleLoss===null?'–':signed(-scaleLoss,1,' kg')}</strong><small>${scale!==null?`von ${fmt(startW,1)} auf ${fmt(scale,1)} kg · ${fmt(progressPct(scale))}% des Ziels`:'Noch kein Waagenwert'}</small><div class="progress-bar actual"><i style="width:${progressPct(scale)}%;background:linear-gradient(90deg,var(--green),var(--green-2))"></i></div></div><div class="loss-card model"><span>Kalorienmodell</span><strong>${modelLoss===null?'–':signed(-modelLoss,1,' kg')}</strong><small>${hasNum(model)?`von ${fmt(startW,1)} auf ${fmt(model,1)} kg · ${fmt(progressPct(model))}% des Ziels`:'Noch keine Berechnung'}</small><div class="progress-bar"><i style="width:${progressPct(model)}%;background:linear-gradient(90deg,var(--blue),var(--blue-2))"></i></div></div>`;
   const diff=scale!==null&&hasNum(model)?scale-model:null;
   $('#comparisonCard').innerHTML=`<div class="comparison-main"><div><span>Aktueller Abstand</span><strong>${diff===null?'–':signed(diff,1,' kg')}</strong></div><div><span>${diff===null?'Noch keine Vergleichsdaten':diff>0?'Waage über Modell':diff<0?'Waage unter Modell':'Gleichstand'}</span></div></div><p>${diff===null?'Sobald Gewicht und Kalorienmodell verfügbar sind, siehst du hier den Abstand.':`Die Waage kann kurzfristig durch Wasser, Salz, Glykogen und Magen-/Darminhalt vom Energiebilanz-Modell abweichen. Entscheidend ist die Entwicklung über mehrere Tage.`}</p>`;
+  renderWeightDateCalculator();
 }
+function renderWeightDateCalculator(){
+  const input=$('#weightDateCalculator'),box=$('#weightDateResult');
+  if(!input||!box)return;
+  const today=dateKey();
+  input.min=today;
+  if(!input.value)input.value=addDays(today,30);
+  let target=input.value;
+  if(target<today){target=today;input.value=target}
+  const forecast=forecastWeight(target),plan=plannedWeight(target),model=forecastModelWeight(target),days=Math.max(0,daysBetween(today,target)),base=currentForecastBase();
+  const change=validWeight(forecast)&&validWeight(base)?forecast-base:null;
+  box.innerHTML=`<div class="date-calculator-hero"><span>Voraussichtliches Gewicht am ${formatDate(target)}</span><strong>${validWeight(forecast)?fmt(forecast,1)+' kg':'–'}</strong><small>${change===null?'Noch nicht genug Daten für eine Prognose':`${signed(change,1,' kg')} gegenüber deinem aktuellen Prognose-Startwert`}</small></div><div class="date-calculator-grid"><div><span>Soll laut Plan</span><strong>${hasNum(plan)?fmt(plan,1)+' kg':'–'}</strong><small>ohne tägliche Eingabe</small></div><div><span>Aktuelle Prognose</span><strong>${validWeight(forecast)?fmt(forecast,1)+' kg':'–'}</strong><small>Waagentrend + künftiger Plan</small></div><div><span>Kalorienmodell</span><strong>${hasNum(model)?fmt(model,1)+' kg':'–'}</strong><small>Modell + künftiger Plan</small></div></div><p>Für ${days} ${days===1?'Tag':'Tage'} in die Zukunft. Die Prognose ist eine Schätzung und kann durch Wasser, Aktivität und tatsächliche Kalorien abweichen.</p>`;
+}
+
 function buildChartSeries(start,end){
   const rows=[];for(let k=start;k<=end;k=addDays(k,1)){rows.push({date:k,plan:plannedWeight(k),model:calorieModelWeight(k),actual:validWeight(actual(k).weight)?+actual(k).weight:null})}return rows;
 }
