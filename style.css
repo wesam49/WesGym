@@ -47,3 +47,16 @@ main{padding:10px 14px 30px}.page{display:none}.page.active{display:block}.secti
 .date-calculator-grid small{display:block;margin-top:3px;font-size:8.5px;line-height:1.35;color:#7a8999}
 .date-calculator-result>p{margin:9px 2px 0;color:var(--muted);font-size:10px;line-height:1.45}
 @media(max-width:430px){.today-comparison{grid-template-columns:1fr 1fr}.comparison-tile.model{grid-column:1/-1}.date-calculator-grid{grid-template-columns:1fr 1fr}.date-calculator-grid>div:last-child{grid-column:1/-1}}
+
+/* 5.2 — clearer time plan: scale forecast and calorie effects are separate */
+.timeline-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:10px}
+.timeline-card{min-width:0;padding:14px;border-radius:18px;background:#f7f9fc;border:1px solid var(--line)}
+.timeline-card span{display:block;font-size:10px;color:var(--muted);font-weight:780}
+.timeline-card strong{display:block;margin-top:5px;font-size:18px;letter-spacing:-.35px}
+.timeline-card small{display:block;margin-top:4px;color:var(--muted);font-size:10px;line-height:1.4}
+.timeline-card.good{background:var(--green-soft);border-color:#d7eee2}
+.timeline-card.good strong{color:#187d50}
+.timeline-card.bad{background:var(--red-soft);border-color:#f4d9dc}
+.timeline-card.bad strong{color:#bd3b45}
+.timeline-card.neutral{background:#f7f9fc}
+@media(max-width:390px){.timeline-grid{grid-template-columns:1fr}.timeline-card strong{font-size:17px}}

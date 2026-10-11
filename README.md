@@ -1,8 +1,12 @@
-# WesGym 5.1
+# WesGym 5.2
 
-Neu gegenüber 5.0:
-- **Soll heute** ist jetzt auf der Startseite klar sichtbar.
-- In **Analyse** gibt es einen direkten Vergleich: Soll / Waage / Kalorienmodell.
-- Neue **Datumsrechner**-Karte in Analyse: Datum auswählen und erwartetes Gewicht sehen.
-- Der Rechner zeigt drei Werte: Soll laut Plan, aktuelle Prognose und Kalorienmodell-Prognose.
-- Lokale Daten bleiben erhalten (`wesgym_simple_2_0`).
+Neu in 5.2:
+- Der aktuelle Zieltermin basiert jetzt primär auf dem heutigen bzw. letzten echten Waagenwert, nicht auf dem Kalorienmodell.
+- Originaler Zieltermin bleibt als feste Referenz sichtbar.
+- Kalorien-Effekt heute wird separat in Plan-Tagen angezeigt.
+- Kalorien-Effekt seit Start wird separat von der Waagen-Prognose angezeigt.
+- Offenes Training am heutigen Tag verursacht noch keine Strafwirkung. Erst verpasste vergangene Trainings wirken auf die kumulierte Kalorien-/Trainingsabweichung.
+- Analyse zeigt dieselbe klare Trennung.
+- Datumsprognose startet beim heutigen/letzten Waagenwert.
+- Ungewöhnliche Gewichtssprünge >5 kg gegenüber dem letzten Eintrag verlangen eine Bestätigung.
+- Bestehende Daten bleiben über denselben localStorage-Schlüssel erhalten.

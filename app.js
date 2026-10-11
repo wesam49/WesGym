@@ -6,7 +6,7 @@ const defaults={
   plan:{startDate:'',startWeight:null,maintenanceCalories:2600,plannedCalories:1800,goalWeight:null},
   days:{},
   gym:{calories:300,weekdays:[],series:[],skips:[]},
-  meta:{version:'5.1'}
+  meta:{version:'5.2'}
 };
 let db=loadDb();
 let calendarCursor=startOfMonth(new Date());
@@ -60,7 +60,7 @@ function migrateOldWeekdays(out){
   });
   out.gym.weekdays=[];
 }
-function save(){db.meta.version='5.1';localStorage.setItem(KEY,JSON.stringify(db))}
+function save(){db.meta.version='5.2';localStorage.setItem(KEY,JSON.stringify(db))}
 
 function isSkipped(seriesId,k){return db.gym.skips.some(x=>x.seriesId===seriesId&&x.date===k)}
 function gymOccurrences(k){
@@ -143,7 +143,16 @@ function projectFromWeight(baseWeight,fromDate,targetDate){
   while(k<=targetDate&&guard<2500){w-=plannedDeficit(k)/7700;k=addDays(k,1);guard++}
   return w;
 }
-function currentForecastBase(){return smoothedScaleWeight(dateKey())??calorieModelWeight(dateKey())??(+db.plan.startWeight||null)}
+function currentForecastBaseInfo(){
+  const today=dateKey(),todayW=actual(today).weight;
+  if(validWeight(todayW))return{weight:+todayW,source:'today',date:today};
+  const ws=allWeights(today);
+  if(ws.length){const last=ws.at(-1);return{weight:+last.weight,source:'latest',date:last.date}}
+  const model=calorieModelWeight(today);
+  if(validWeight(model))return{weight:+model,source:'model',date:today};
+  return{weight:validWeight(db.plan.startWeight)?+db.plan.startWeight:null,source:'start',date:db.plan.startDate||today};
+}
+function currentForecastBase(){return currentForecastBaseInfo().weight}
 function currentGoalDate(){
   const p=db.plan,base=currentForecastBase();
   if(!validWeight(base)||!validWeight(p.goalWeight))return null;
@@ -156,12 +165,45 @@ function goalShiftDays(){const a=originalGoalDate(),b=currentGoalDate();return a
 function forecastWeight(targetDate){return projectFromWeight(currentForecastBase(),dateKey(),targetDate)}
 function forecastModelWeight(targetDate){return projectFromWeight(calorieModelWeight(dateKey()),dateKey(),targetDate)}
 function planStatusToday(){
-  const actualW=smoothedScaleWeight(dateKey())??latestWeight(dateKey()),planW=plannedWeight(dateKey());
-  if(!validWeight(actualW)||!hasNum(planW))return{type:'neutral',text:'Noch nicht genug Gewichtsdaten',diff:null};
+  const info=currentForecastBaseInfo(),actualW=info.weight,planW=plannedWeight(dateKey());
+  if(!validWeight(actualW)||!hasNum(planW))return{type:'neutral',text:'Noch kein Waagenwert für den Vergleich',diff:null,source:info.source};
   const diff=actualW-planW;
-  if(Math.abs(diff)<=.15)return{type:'good',text:'Du bist im Plan',diff};
-  if(diff<0)return{type:'good',text:`${fmt(Math.abs(diff),1)} kg vor dem Plan`,diff};
-  return{type:'bad',text:`${fmt(diff,1)} kg hinter dem Plan`,diff};
+  if(Math.abs(diff)<=.15)return{type:'good',text:'Du bist im Plan',diff,source:info.source};
+  if(diff<0)return{type:'good',text:`${fmt(Math.abs(diff),1)} kg vor dem Plan`,diff,source:info.source};
+  return{type:'bad',text:`${fmt(diff,1)} kg hinter dem Plan`,diff,source:info.source};
+}
+function dayEnergyDeviation(k,{countOpenGym=false}={}){
+  const d=actual(k),planned=+db.plan.plannedCalories||0;
+  let delta=hasNum(d.calories)?(+d.calories-planned):0;
+  if(gymDay(k)&&d.gymDone!==true){
+    const missed=(k<dateKey())||(countOpenGym&&k===dateKey());
+    if(missed)delta+=gymBurnPlanned(k);
+  }
+  return delta;
+}
+function dayDelayEquivalent(k,{countOpenGym=false}={}){
+  const def=Math.max(1,plannedDeficit(k));
+  return dayEnergyDeviation(k,{countOpenGym})/def;
+}
+function cumulativeCalorieEffectDays(until=dateKey()){
+  const p=db.plan;if(!p.startDate)return null;
+  let cur=p.startDate,total=0,guard=0;
+  while(cur<=until&&guard<2500){total+=dayDelayEquivalent(cur,{countOpenGym:false});cur=addDays(cur,1);guard++}
+  return total;
+}
+function todayCalorieEffect(){
+  const k=dateKey(),d=actual(k),delta=dayEnergyDeviation(k,{countOpenGym:false}),days=dayDelayEquivalent(k,{countOpenGym:false});
+  const gymOpen=gymDay(k)&&d.gymDone!==true;
+  return{delta,days,gymOpen,hasCalories:hasNum(d.calories)};
+}
+function timelineHtml(){
+  const orig=originalGoalDate(),cur=currentGoalDate(),shift=goalShiftDays(),baseInfo=currentForecastBaseInfo(),todayFx=todayCalorieEffect(),cum=cumulativeCalorieEffectDays();
+  const shiftClass=shift===null?'neutral':shift>0?'bad':shift<0?'good':'good';
+  const todayClass=!todayFx.hasCalories?'neutral':todayFx.days>0.05?'bad':todayFx.days<-.05?'good':'neutral';
+  const cumClass=cum===null?'neutral':cum>0.05?'bad':cum<-.05?'good':'neutral';
+  const sourceText=baseInfo.source==='today'?'heutigem Waagenwert':baseInfo.source==='latest'?`letztem Waagenwert vom ${formatDate(baseInfo.date,{day:'2-digit',month:'2-digit'})}`:baseInfo.source==='model'?'Kalorienmodell (noch kein Waagenwert)':'Startgewicht';
+  const todaySub=!todayFx.hasCalories?'Heute noch keine Kalorien eingetragen':`${todayFx.delta>0?'+':''}${fmt(todayFx.delta)} kcal vs. Tagesziel${todayFx.gymOpen?' · Training noch offen':''}`;
+  return `<div class="timeline-card"><span>Originaler Zieltermin</span><strong>${orig?formatDate(orig):'–'}</strong><small>bleibt als Referenz fest</small></div><div class="timeline-card ${shiftClass}"><span>Nach Waage</span><strong>${cur?formatDate(cur):'–'}</strong><small>${shift===null?'Noch kein Vergleich':shift>0?`+${shift} Tage später`:shift<0?`${Math.abs(shift)} Tage früher`:'genau im Zeitplan'} · nach ${sourceText}</small></div><div class="timeline-card ${todayClass}"><span>Kalorien-Effekt heute</span><strong>${!todayFx.hasCalories?'–':`${todayFx.days>0?'+':''}${fmt(todayFx.days,1)} Tage`}</strong><small>${todaySub}</small></div><div class="timeline-card ${cumClass}"><span>Kalorien-Effekt seit Start</span><strong>${cum===null?'–':`${cum>0?'+':''}${fmt(cum,1)} Tage`}</strong><small>separat von der Waagen-Prognose</small></div>`;
 }
 function calorieStatus(k){
   const c=actual(k).calories,p=+db.plan.plannedCalories||0;
@@ -281,12 +323,13 @@ function renderHome(){
       <div class="journey-stat end"><span>Zielgewicht</span><strong>${goal!==null?fmt(goal,1)+' kg':'–'}</strong></div>
     </div>
     <div class="journey-note ${status.type}">${status.text}${target?` · Zieltermin ${formatDate(target)}`:''}</div>`;
-  $('#heroStatusText').textContent=shift===null?'Deine Daten zeigen dir, wo du heute wirklich stehst.':shift>0?`Die aktuelle Prognose liegt ${shift} Tage hinter dem ursprünglichen Plan.`:shift<0?`Die aktuelle Prognose liegt ${Math.abs(shift)} Tage vor dem ursprünglichen Plan.`:'Du liegst zeitlich genau auf deinem ursprünglichen Plan.';
+  $('#heroStatusText').textContent=shift===null?'Deine Daten zeigen dir, wo du heute wirklich stehst.':shift>0?`Nach deinem aktuellen Waagenwert liegt dein Zieltermin ${shift} Tage hinter dem ursprünglichen Plan.`:shift<0?`Nach deinem aktuellen Waagenwert liegt dein Zieltermin ${Math.abs(shift)} Tage vor dem ursprünglichen Plan.`:'Nach deinem aktuellen Waagenwert liegst du zeitlich genau im Plan.';
 
   const total=start!==null&&goal!==null?start-goal:null;
   const scaleLost=start!==null&&scale!==null?start-scale:null;
   const modelLost=start!==null&&hasNum(model)?start-model:null;
   $('#homeTodayComparison').innerHTML=todayComparisonHtml(planToday,scale,model);
+  $('#homeTimeline').innerHTML=timelineHtml();
   $('#homeProgress').innerHTML=`
     ${progressCard('actual','Waage (tatsächlich)',scaleLost,scale,scalePct,total)}
     ${progressCard('model','Kalorienmodell',modelLost,model,modelPct,total)}`;
@@ -316,6 +359,10 @@ function progressCard(type,label,lost,current,pct,total){
 function saveToday(e){
   e.preventDefault();const k=dateKey(),old=actual(k),weight=num('#todayWeight'),cal=num('#todayCalories');
   if(weight!==null&&weight<=0)return toast('Bitte ein gültiges Gewicht eingeben');
+  if(validWeight(weight)){
+    const prev=latestWeight(addDays(k,-1));
+    if(validWeight(prev)&&Math.abs(weight-prev)>5&&!confirm(`Ungewöhnlicher Gewichtswert: ${fmt(weight,1)} kg. Dein letzter Wert war ${fmt(prev,1)} kg. Wirklich speichern?`))return;
+  }
   db.days[k]={...old,date:k,weight,calories:cal,gymDone:gymDay(k)?$('#todayGymDone').checked:null};
   save();renderAll();toast('Tag gespeichert');
 }
@@ -383,6 +430,7 @@ function renderAnalysisProgress(){
   $('#weightChart').innerHTML=weightChartSvg(points,start,today);
   const startW=validWeight(db.plan.startWeight)?+db.plan.startWeight:null,scale=latestWeight(),model=calorieModelWeight(),planToday=plannedWeight(today);
   $('#analysisTodayComparison').innerHTML=todayComparisonHtml(planToday,scale,model);
+  $('#analysisTimeline').innerHTML=timelineHtml();
   const scaleLoss=startW!==null&&scale!==null?startW-scale:null,modelLoss=startW!==null&&hasNum(model)?startW-model:null;
   $('#analysisLossCards').innerHTML=`<div class="loss-card actual"><span>Waage (tatsächlich)</span><strong>${scaleLoss===null?'–':signed(-scaleLoss,1,' kg')}</strong><small>${scale!==null?`von ${fmt(startW,1)} auf ${fmt(scale,1)} kg · ${fmt(progressPct(scale))}% des Ziels`:'Noch kein Waagenwert'}</small><div class="progress-bar actual"><i style="width:${progressPct(scale)}%;background:linear-gradient(90deg,var(--green),var(--green-2))"></i></div></div><div class="loss-card model"><span>Kalorienmodell</span><strong>${modelLoss===null?'–':signed(-modelLoss,1,' kg')}</strong><small>${hasNum(model)?`von ${fmt(startW,1)} auf ${fmt(model,1)} kg · ${fmt(progressPct(model))}% des Ziels`:'Noch keine Berechnung'}</small><div class="progress-bar"><i style="width:${progressPct(model)}%;background:linear-gradient(90deg,var(--blue),var(--blue-2))"></i></div></div>`;
   const diff=scale!==null&&hasNum(model)?scale-model:null;
@@ -399,7 +447,7 @@ function renderWeightDateCalculator(){
   if(target<today){target=today;input.value=target}
   const forecast=forecastWeight(target),plan=plannedWeight(target),model=forecastModelWeight(target),days=Math.max(0,daysBetween(today,target)),base=currentForecastBase();
   const change=validWeight(forecast)&&validWeight(base)?forecast-base:null;
-  box.innerHTML=`<div class="date-calculator-hero"><span>Voraussichtliches Gewicht am ${formatDate(target)}</span><strong>${validWeight(forecast)?fmt(forecast,1)+' kg':'–'}</strong><small>${change===null?'Noch nicht genug Daten für eine Prognose':`${signed(change,1,' kg')} gegenüber deinem aktuellen Prognose-Startwert`}</small></div><div class="date-calculator-grid"><div><span>Soll laut Plan</span><strong>${hasNum(plan)?fmt(plan,1)+' kg':'–'}</strong><small>ohne tägliche Eingabe</small></div><div><span>Aktuelle Prognose</span><strong>${validWeight(forecast)?fmt(forecast,1)+' kg':'–'}</strong><small>Waagentrend + künftiger Plan</small></div><div><span>Kalorienmodell</span><strong>${hasNum(model)?fmt(model,1)+' kg':'–'}</strong><small>Modell + künftiger Plan</small></div></div><p>Für ${days} ${days===1?'Tag':'Tage'} in die Zukunft. Die Prognose ist eine Schätzung und kann durch Wasser, Aktivität und tatsächliche Kalorien abweichen.</p>`;
+  box.innerHTML=`<div class="date-calculator-hero"><span>Voraussichtliches Gewicht am ${formatDate(target)}</span><strong>${validWeight(forecast)?fmt(forecast,1)+' kg':'–'}</strong><small>${change===null?'Noch nicht genug Daten für eine Prognose':`${signed(change,1,' kg')} gegenüber deinem aktuellen Prognose-Startwert`}</small></div><div class="date-calculator-grid"><div><span>Soll laut Plan</span><strong>${hasNum(plan)?fmt(plan,1)+' kg':'–'}</strong><small>ohne tägliche Eingabe</small></div><div><span>Aktuelle Prognose</span><strong>${validWeight(forecast)?fmt(forecast,1)+' kg':'–'}</strong><small>heutiger/letzter Waagenwert + künftiger Plan</small></div><div><span>Kalorienmodell</span><strong>${hasNum(model)?fmt(model,1)+' kg':'–'}</strong><small>Modell + künftiger Plan</small></div></div><p>Für ${days} ${days===1?'Tag':'Tage'} in die Zukunft. Die Prognose ist eine Schätzung und kann durch Wasser, Aktivität und tatsächliche Kalorien abweichen.</p>`;
 }
 
 function buildChartSeries(start,end){
@@ -419,7 +467,7 @@ function renderForecast(){
   let target;if(forecastDays!==null){target=addDays(dateKey(),forecastDays);$('#forecastDate').value=target}else target=$('#forecastDate').value||addDays(dateKey(),30);
   if(target<dateKey())target=dateKey();
   const f=forecastWeight(target),m=forecastModelWeight(target),p=plannedWeight(target),base=currentForecastBase(),change=validWeight(f)&&validWeight(base)?f-base:null,days=Math.max(0,daysBetween(dateKey(),target));
-  $('#forecastHero').innerHTML=`<span class="forecast-label">Prognose in ${days} ${days===1?'Tag':'Tagen'} · ${formatDate(target)}</span><div class="forecast-weight">${validWeight(f)?fmt(f,1)+' kg':'–'}</div><span class="forecast-change ${change!==null&&change>0?'bad':''}">${change===null?'Noch keine Prognose':`${signed(change,1,' kg')} gegenüber heute`}</span><div class="forecast-note">Die Prognose startet beim geglätteten Waagengewicht und setzt voraus, dass du deinen aktuellen Kalorien- und Trainingsplan künftig einhältst. Das Kalorienmodell bleibt separat sichtbar.</div>`;
+  $('#forecastHero').innerHTML=`<span class="forecast-label">Prognose in ${days} ${days===1?'Tag':'Tagen'} · ${formatDate(target)}</span><div class="forecast-weight">${validWeight(f)?fmt(f,1)+' kg':'–'}</div><span class="forecast-change ${change!==null&&change>0?'bad':''}">${change===null?'Noch keine Prognose':`${signed(change,1,' kg')} gegenüber heute`}</span><div class="forecast-note">Die Waagen-Prognose startet mit deinem heutigen bzw. letzten echten Waagenwert und setzt voraus, dass du deinen aktuellen Kalorien- und Trainingsplan künftig einhältst. Das Kalorienmodell bleibt separat sichtbar.</div>`;
   $('#forecastChart').innerHTML=forecastChartSvg(target);
   const qs=[7,14,30,60];$('#forecastQuick').innerHTML=qs.map(n=>{const wk=forecastWeight(addDays(dateKey(),n)),chg=validWeight(wk)&&validWeight(base)?wk-base:null;return `<div class="forecast-mini"><span>in ${n} Tagen</span><strong>${validWeight(wk)?fmt(wk,1)+' kg':'–'}</strong><small>${chg===null?'–':signed(chg,1,' kg')}</small></div>`}).join('');
 }
@@ -439,7 +487,7 @@ function renderPlan(){
   if(!$('#trainingDate').value)$('#trainingDate').value=dateKey();
   $('#trainingCalories').value=db.gym.calories??300;
   const def=planBaseDeficit(),weekly=def*7/7700,orig=originalGoalDate(),cur=currentGoalDate(),shift=goalShiftDays();
-  $('#planSummary').innerHTML=`<div class="summary-box"><span>Basisdefizit</span><strong>${fmt(def)} kcal / Tag</strong></div><div class="summary-box"><span>Tempo ohne Gym</span><strong>≈ ${fmt(weekly,2)} kg / Woche</strong></div><div class="summary-box"><span>Geplanter Zieltermin</span><strong>${orig?formatDate(orig):'–'}</strong></div><div class="summary-box ${shift!==null&&shift>0?'bad':'good'}"><span>Aktueller Zieltermin</span><strong>${cur?formatDate(cur):'–'}</strong></div>`;
+  $('#planSummary').innerHTML=`<div class="summary-box"><span>Basisdefizit</span><strong>${fmt(def)} kcal / Tag</strong></div><div class="summary-box"><span>Tempo ohne Gym</span><strong>≈ ${fmt(weekly,2)} kg / Woche</strong></div><div class="summary-box"><span>Geplanter Zieltermin</span><strong>${orig?formatDate(orig):'–'}</strong></div><div class="summary-box ${shift!==null&&shift>0?'bad':'good'}"><span>Zieltermin nach Waage</span><strong>${cur?formatDate(cur):'–'}</strong></div>`;
   renderSeriesList('#trainingUpcoming');
 }
 function savePlan(e){
