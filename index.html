@@ -38,7 +38,7 @@
         </div>
       </section>
 
-      <section class="section-block">
+      <section class="section-block legacy-home hidden">
         <div class="section-title-row"><div><span class="section-kicker">Heute im Vergleich</span><h2>Soll, Waage und Kalorienmodell</h2></div></div>
         <div id="homeTodayComparison" class="today-comparison"></div>
         <div class="section-subtitle"><span class="section-kicker">Dein Zeitplan</span></div>
@@ -60,7 +60,9 @@
         </form>
       </section>
 
-      <section class="section-block">
+      <section class="section-block" id="homeWorkoutCard"><h2 id="nextWorkoutName">Full Body A</h2><button class="primary-button" id="homeStartWorkout" type="button">Training starten →</button></section>
+      <section class="section-block" id="homeMilestones"></section>
+      <section class="section-block home-old-week hidden">
         <div class="section-title-row"><div><span class="section-kicker">Schnellübersicht</span><h2>Diese Woche</h2></div></div>
         <div id="homeWeekSummary" class="metric-grid"></div>
       </section>
@@ -145,9 +147,10 @@
       </div>
     </section>
 
+    <section id="workout" class="page"><section class="section-block"><div class="section-title-row"><div><span class="section-kicker">Krafttraining</span><h2>Full Body</h2></div><button id="editRoutine" class="text-button" type="button">Bearbeiten</button></div><div id="workoutApp"></div></section></section>
     <section id="plan" class="page">
       <section class="section-block">
-        <div class="section-title-row"><div><span class="section-kicker">Ziel</span><h2>Dein Weg</h2></div><span class="version-pill">5.2</span></div>
+        <div class="section-title-row"><div><span class="section-kicker">Ziel</span><h2>Dein Weg</h2></div><span class="version-pill">5.3</span></div>
         <form id="planForm" class="plan-form">
           <div class="form-grid">
             <label><span>Startdatum</span><input id="startDate" type="date" required></label>
@@ -158,7 +161,7 @@
           </div>
           <button class="primary-button" type="submit">Plan speichern</button>
         </form>
-        <div id="planSummary" class="plan-summary"></div>
+        <div id="planSummary" class="plan-summary"></div><section class="cut-card"><h2>Cut-Rechner</h2><p>Kalorien ausprobieren, bevor du dein Ziel übernimmst.</p><div class="cut-number" id="cutCaloriesValue">2300 kcal</div><input id="cutSlider" type="range" min="1500" max="3500" step="50"><div id="cutResults" class="cut-results"></div><button id="cutApply" class="primary-button" type="button">Kalorienziel übernehmen</button></section>
       </section>
 
       <section class="section-block">
@@ -192,6 +195,7 @@
     <button data-page="calendar" type="button"><svg viewBox="0 0 24 24"><path d="M7 3v4M17 3v4M4 9h16M5 5h14a1 1 0 0 1 1 1v14H4V6a1 1 0 0 1 1-1z"/></svg><small>Kalender</small></button>
     <button data-page="history" type="button"><svg viewBox="0 0 24 24"><path d="M4 18V9M10 18V5M16 18v-7M22 18V3"/></svg><small>Verlauf</small></button>
     <button data-page="analysis" type="button"><svg viewBox="0 0 24 24"><path d="M4 18 9 12l4 3 7-9M4 21h16"/></svg><small>Analyse</small></button>
+    <button data-page="workout" type="button"><svg viewBox="0 0 24 24"><path d="M4 9v6M7 7v10M17 7v10M20 9v6M7 12h10"/></svg><small>Training</small></button>
     <button data-page="plan" type="button"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 4V2M20 12h2M12 20v2M4 12H2"/></svg><small>Plan</small></button>
   </nav>
 </div>

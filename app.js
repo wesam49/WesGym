@@ -6,7 +6,7 @@ const defaults={
   plan:{startDate:'',startWeight:null,maintenanceCalories:2600,plannedCalories:1800,goalWeight:null},
   days:{},
   gym:{calories:300,weekdays:[],series:[],skips:[]},
-  meta:{version:'5.2'}
+  meta:{version:'5.3'}
 };
 let db=loadDb();
 let calendarCursor=startOfMonth(new Date());
@@ -60,7 +60,7 @@ function migrateOldWeekdays(out){
   });
   out.gym.weekdays=[];
 }
-function save(){db.meta.version='5.2';localStorage.setItem(KEY,JSON.stringify(db))}
+function save(){db.meta.version='5.3';localStorage.setItem(KEY,JSON.stringify(db))}
 
 function isSkipped(seriesId,k){return db.gym.skips.some(x=>x.seriesId===seriesId&&x.date===k)}
 function gymOccurrences(k){
@@ -83,7 +83,7 @@ function gymOccurrences(k){
 function gymDay(k){return gymOccurrences(k).length>0}
 function gymBurnPlanned(k){return gymOccurrences(k).reduce((sum,s)=>sum+(hasNum(s.calories)?+s.calories:(+db.gym.calories||0)),0)}
 function planBaseDeficit(){return (+db.plan.maintenanceCalories||0)-(+db.plan.plannedCalories||0)}
-function plannedDeficit(k){return planBaseDeficit()+gymBurnPlanned(k)}
+function plannedDeficit(k){return planBaseDeficit()}
 
 function plannedWeight(k){
   const p=db.plan;
@@ -101,7 +101,7 @@ function calorieModelWeight(k=dateKey()){
     const d=actual(cur);
     if(cur===today&&!hasNum(d.calories)){cur=addDays(cur,1);guard++;continue}
     const eaten=hasNum(d.calories)?+d.calories:(+p.plannedCalories||0);
-    const gymBurn=gymDay(cur)&&d.gymDone===true?gymBurnPlanned(cur):0;
+    const gymBurn=0;
     w-=((+p.maintenanceCalories||0)-eaten+gymBurn)/7700;
     cur=addDays(cur,1);guard++;
   }
@@ -175,10 +175,7 @@ function planStatusToday(){
 function dayEnergyDeviation(k,{countOpenGym=false}={}){
   const d=actual(k),planned=+db.plan.plannedCalories||0;
   let delta=hasNum(d.calories)?(+d.calories-planned):0;
-  if(gymDay(k)&&d.gymDone!==true){
-    const missed=(k<dateKey())||(countOpenGym&&k===dateKey());
-    if(missed)delta+=gymBurnPlanned(k);
-  }
+  
   return delta;
 }
 function dayDelayEquivalent(k,{countOpenGym=false}={}){
@@ -211,7 +208,7 @@ function calorieStatus(k){
   return +c<=p+100?'good':'bad';
 }
 function gymStatus(k){
-  if(!gymDay(k))return'neutral';
+  if(!gymDay(k)&&!actual(k).workoutId)return'neutral';
   const d=actual(k);
   if(d.gymDone===true)return'good';
   if(k<dateKey())return'bad';
@@ -257,6 +254,37 @@ function svgIcon(name){
   return `<svg viewBox="0 0 24 24" aria-hidden="true">${map[name]||map.target}</svg>`;
 }
 
+
+const starterRoutines={
+ A:[['Leg Press',3,10],['Bench Press',3,8],['Lat Pulldown',3,10],['Seated Leg Curl',2,12],['Lateral Raise',2,12],['Triceps Pushdown',2,12]],
+ B:[['Seated Leg Curl',3,12],['Incline Dumbbell Press',3,10],['Seated Cable Row',3,10],['Leg Extension',3,12],['Shoulder Press',2,10],['Biceps Curl',2,12],['Back Extension',2,12]],
+ C:[['Leg Press',3,10],['Chest Press Machine',3,10],['Lat Pulldown',3,10],['Seated Leg Curl',3,12],['Lateral Raise',2,12],['Cable Row',2,12],['Biceps Curl',2,12]]
+};
+function ensureWorkout(){
+ if(!db.workout||typeof db.workout!=='object')db.workout={};
+ if(!db.workout.routines)db.workout.routines=Object.fromEntries(Object.entries(starterRoutines).map(([k,items])=>[k,items.map(([name,sets,reps])=>({id:uid(),name,sets,reps}))]));
+ if(!Array.isArray(db.workout.history))db.workout.history=[];
+ if(!('active'in db.workout))db.workout.active=null;
+}
+ensureWorkout();
+function nextWorkout(){const h=db.workout.history;return h.length?({A:'B',B:'C',C:'A'}[h[h.length-1].routine]||'A'):'A'}
+function lastExercise(ex){for(let i=db.workout.history.length-1;i>=0;i--){const x=db.workout.history[i].exercises.find(z=>z.name===ex.name);if(x)return x}return null}
+function startWorkout(type){if(db.workout.active)return renderWorkout();db.workout.active={id:uid(),routine:type,date:dateKey(),exercises:db.workout.routines[type].map(ex=>{const prev=lastExercise(ex);return {id:ex.id,name:ex.name,sets:Array.from({length:ex.sets},(_,i)=>({weight:prev?.sets[i]?.weight??'',reps:prev?.sets[i]?.reps??ex.reps,done:false}))}})};save();renderWorkout();renderHome()}
+function renderWorkout(){const root=$('#workoutApp');if(!root)return;const a=db.workout.active;
+ if(!a){root.innerHTML='<p>Wähle dein Training. Kein fester Wochentag nötig.</p><div class="workout-choices">'+['A','B','C'].map(t=>`<button class="secondary-button" data-start="${t}">Full Body ${t}</button>`).join('')+'</div><p class="workout-hint">Nächstes Training: Full Body '+nextWorkout()+'</p>';root.querySelectorAll('[data-start]').forEach(b=>b.onclick=()=>startWorkout(b.dataset.start));return}
+ const all=a.exercises.flatMap(e=>e.sets),done=all.filter(s=>s.done).length;
+ root.innerHTML=`<div class="workout-head"><h3>Full Body ${a.routine}</h3><span>${done}/${all.length} Sätze</span></div><div class="workout-progress"><i style="width:${all.length?done/all.length*100:0}%"></i></div>`+a.exercises.map((ex,ei)=>{const prev=lastExercise(ex);return `<article class="workout-exercise"><h3>${escapeHtml(ex.name)}</h3><small>Letztes Mal: ${prev?prev.sets.filter(s=>s.done).map(s=>`${s.weight||0} kg × ${s.reps||0}`).join(' · ')||'–':'Noch kein Eintrag'}</small><div class="set-list">${ex.sets.map((s,si)=>`<div class="set-line"><span>${si+1}</span><label><input type="number" min="0" step="0.5" inputmode="decimal" data-e="${ei}" data-s="${si}" data-f="weight" value="${s.weight}" aria-label="Gewicht in kg"> kg</label><label><input type="number" min="0" step="1" inputmode="numeric" data-e="${ei}" data-s="${si}" data-f="reps" value="${s.reps}" aria-label="Wiederholungen"> Wdh.</label><button type="button" class="set-check ${s.done?'done':''}" data-done="${ei}-${si}" aria-label="Satz erledigt">${s.done?'✓':'○'}</button></div>`).join('')}</div></article>`}).join('')+`<button id="finishWorkout" class="primary-button" type="button">Training beenden</button><button id="cancelWorkout" class="text-button" type="button">Training verwerfen</button>`;
+ root.querySelectorAll('input[data-e]').forEach(el=>el.addEventListener('change',()=>{const s=a.exercises[+el.dataset.e].sets[+el.dataset.s];const v=el.value===''?'':Number(el.value);if(v!==''&&(!Number.isFinite(v)||v<0))return;s[el.dataset.f]=v;save()}));
+ root.querySelectorAll('[data-done]').forEach(b=>b.onclick=()=>{const [ei,si]=b.dataset.done.split('-').map(Number);const fields=[...root.querySelectorAll(`input[data-e="${ei}"][data-s="${si}"]`)];fields.forEach(el=>el.dispatchEvent(new Event('change')));const s=a.exercises[ei].sets[si];if(!hasNum(s.weight)||!hasNum(s.reps)||+s.reps<=0)return toast('Gewicht und Wiederholungen eingeben');s.done=!s.done;save();renderWorkout()});
+ $('#finishWorkout').onclick=finishWorkout;$('#cancelWorkout').onclick=()=>{if(confirm('Unvollständiges Training wirklich verwerfen?')){db.workout.active=null;save();renderWorkout();renderHome()}};
+}
+function finishWorkout(){const a=db.workout.active;if(!a)return;const done=a.exercises.flatMap(x=>x.sets).filter(s=>s.done);if(!done.length)return toast('Bitte zuerst einen Satz abschließen');
+ const improvements=a.exercises.filter(ex=>{const prev=lastExercise(ex);if(!prev)return false;const vol=x=>x.sets.filter(s=>s.done).reduce((sum,s)=>sum+(+s.weight||0)*(+s.reps||0),0);return vol(ex)>vol(prev)}).length;
+ db.workout.history.push({...a,finishedAt:new Date().toISOString()});db.workout.active=null;const d=actual(a.date);db.days[a.date]={...d,date:a.date,gymDone:true,workoutId:a.id,workoutRoutine:a.routine};save();renderAll();openModal(`<h2>Training geschafft! ✓</h2><p>${done.length} Sätze abgeschlossen · ${improvements} Übungen mit höherem Trainingsvolumen als zuletzt.</p><button class="primary-button" id="closeWorkoutResult">Fertig</button>`);$('#closeWorkoutResult').onclick=()=>{closeModal();openPage('workout')};}
+function editRoutine(){if(db.workout.active)return toast('Bitte zuerst das laufende Training beenden');const t=nextWorkout();openModal(`<h2>Trainingsplan bearbeiten</h2><p>Übungen: eine Zeile pro Übung, Format Name | Sätze | Wiederholungen.</p><select id="routineSelect">${['A','B','C'].map(x=>`<option value="${x}" ${x===t?'selected':''}>Full Body ${x}</option>`).join('')}</select><textarea id="routineText" rows="11" class="routine-editor"></textarea><button id="saveRoutine" class="primary-button">Speichern</button>`);const fill=()=>{$('#routineText').value=db.workout.routines[$('#routineSelect').value].map(x=>`${x.name} | ${x.sets} | ${x.reps}`).join('\n')};$('#routineSelect').onchange=fill;fill();$('#saveRoutine').onclick=()=>{const items=$('#routineText').value.split('\n').filter(x=>x.trim()).map(line=>{const [name,n,r]=line.split('|').map(x=>x.trim());return{name,sets:+n,reps:+r,id:uid()}});if(!items.length||items.some(x=>!x.name||!Number.isInteger(x.sets)||x.sets<1||x.sets>10||!Number.isInteger(x.reps)||x.reps<1||x.reps>50))return toast('Bitte gültige Übungen eingeben');db.workout.routines[$('#routineSelect').value]=items;save();closeModal();renderWorkout();toast('Trainingsplan gespeichert')}}
+let cutDirty=false;
+function renderCutPreview(){const slider=$('#cutSlider');if(!slider)return;const c=+slider.value||2300,m=+db.plan.maintenanceCalories||0,def=m-c,weekly=def*7/7700,w=latestWeight()??db.plan.startWeight,goal=db.plan.goalWeight;$('#cutCaloriesValue').textContent=fmt(c)+' kcal';$('#cutResults').innerHTML=`<div><span>Defizit pro Tag</span><strong>${fmt(def)} kcal</strong></div><div><span>Pro Woche (Schätzung)</span><strong>${weekly>0?'≈ '+fmt(weekly,2)+' kg':'Kein Gewichtsverlust'}</strong></div><div><span>Bis zum Ziel</span><strong>${weekly>0&&validWeight(w)&&validWeight(goal)&&w>goal?'≈ '+fmt((w-goal)/weekly/4.345,1)+' Monate':'–'}</strong></div>`;}
+function applyCut(){const c=+$('#cutSlider').value;if(c<1500||c>3500)return;db.plan.plannedCalories=c;cutDirty=false;save();renderAll();toast('Kalorienziel übernommen')}
 function init(){
   migrateOldWeekdays(db);save();
   bindNavigation();bindActions();setHeader();renderAll();
@@ -272,11 +300,12 @@ function bindNavigation(){
 function openPage(name){
   $$('.page').forEach(p=>p.classList.toggle('active',p.id===name));
   $$('.bottom-nav button').forEach(b=>b.classList.toggle('active',b.dataset.page===name));
-  $('#pageTitle').textContent={home:'Heute',calendar:'Kalender',history:'Verlauf',analysis:'Analyse',plan:'Ziel & Plan'}[name]||'WesGym';
+  $('#pageTitle').textContent={home:'Heute',calendar:'Kalender',history:'Verlauf',analysis:'Analyse',plan:'Ziel & Plan',workout:'Training'}[name]||'WesGym';
   if(name==='calendar')renderCalendar();
   if(name==='history')renderHistory();
   if(name==='analysis')renderAnalysis();
   if(name==='plan')renderPlan();
+  if(name==='workout')renderWorkout();
   window.scrollTo({top:0,behavior:'smooth'});
 }
 function openAnalysisTab(tab){
@@ -302,8 +331,12 @@ function bindActions(){
   $('#forecastButtons').addEventListener('click',e=>{const b=e.target.closest('[data-days]');if(!b)return;forecastDays=+b.dataset.days;$('#forecastDate').value='';renderForecast()});
   $('#chartRanges').addEventListener('click',e=>{const b=e.target.closest('[data-range]');if(!b)return;chartRange=b.dataset.range;renderAnalysisProgress()});
   $('#weightDateCalculator').addEventListener('change',renderWeightDateCalculator);
+  $('#homeStartWorkout').addEventListener('click',()=>{openPage('workout');if(!db.workout.active)startWorkout(nextWorkout())});
+  $('#cutSlider').addEventListener('input',renderCutPreview);
+  $('#cutApply').addEventListener('click',applyCut);
+  $('#editRoutine').addEventListener('click',editRoutine);
 }
-function renderAll(){renderHome();renderCalendar();renderHistory();renderAnalysis();renderPlan()}
+function renderAll(){renderHome();renderCalendar();renderHistory();renderAnalysis();renderPlan();renderWorkout()}
 
 function renderHome(){
   const start=validWeight(db.plan.startWeight)?+db.plan.startWeight:null;
@@ -337,10 +370,14 @@ function renderHome(){
   const today=actual(dateKey());
   $('#todayWeight').value=validWeight(today.weight)?today.weight:'';
   $('#todayCalories').value=hasNum(today.calories)?today.calories:'';
-  const gym=gymDay(dateKey());
+  const gym=gymDay(dateKey())||!!today.workoutId;
   $('#todayGymBox').classList.toggle('hidden',!gym);
   if(gym){$('#todayGymDone').checked=today.gymDone===true;$('#todayGymText').textContent=today.gymDone===true?'Training erledigt':`${gymOccurrences(dateKey()).length} Training geplant`}
 
+  $('#nextWorkoutName').textContent=db.workout.active?'Training fortsetzen':'Full Body '+nextWorkout();
+  $('#homeStartWorkout').textContent=db.workout.active?'Training fortsetzen →':'Training starten →';
+  const current=scale??displayCurrent;
+  $('#homeMilestones').innerHTML='<h2>Deine Meilensteine</h2><div class="milestone-row">'+[90,85,80].map(n=>`<div class="milestone ${validWeight(current)&&current<=n?'reached':''}"><strong>${validWeight(current)&&current<=n?'✓':'○'}</strong><span>${n} kg</span></div>`).join('')+'</div>';
   const gs=gymWeekStreak(),cs=calorieStreak(),week=gs.current;
   $('#homeWeekSummary').innerHTML=`
     <div class="metric-card good"><span>Kalorien-Serie</span><strong>${cs} ${cs===1?'Tag':'Tage'}</strong><small>bis +100 kcal gilt als im Ziel</small></div>
@@ -363,7 +400,7 @@ function saveToday(e){
     const prev=latestWeight(addDays(k,-1));
     if(validWeight(prev)&&Math.abs(weight-prev)>5&&!confirm(`Ungewöhnlicher Gewichtswert: ${fmt(weight,1)} kg. Dein letzter Wert war ${fmt(prev,1)} kg. Wirklich speichern?`))return;
   }
-  db.days[k]={...old,date:k,weight,calories:cal,gymDone:gymDay(k)?$('#todayGymDone').checked:null};
+  db.days[k]={...old,date:k,weight,calories:cal,gymDone:old.workoutId?true:(gymDay(k)?$('#todayGymDone').checked:null)};
   save();renderAll();toast('Tag gespeichert');
 }
 
@@ -374,7 +411,7 @@ function renderCalendar(){
   for(let i=0;i<42;i++){
     const d=new Date(gridStart);d.setDate(gridStart.getDate()+i);const k=dateKey(d),inMonth=d.getMonth()===calendarCursor.getMonth(),today=k===dateKey(),sel=k===selectedDate;
     const cs=calorieStatus(k),gs=gymStatus(k),hasW=validWeight(actual(k).weight);
-    const marks=[];if(hasNum(actual(k).calories))marks.push(`<i class="cal ${cs}"></i>`);if(gymDay(k))marks.push(`<i class="gym ${gs}"></i>`);if(hasW)marks.push('<i class="weight"></i>');
+    const marks=[];if(hasNum(actual(k).calories))marks.push(`<i class="cal ${cs}"></i>`);if(gymDay(k)||actual(k).workoutId)marks.push(`<i class="gym ${gs}"></i>`);if(hasW)marks.push('<i class="weight"></i>');
     cells.push(`<button type="button" class="calendar-day ${inMonth?'':'out'} ${today?'today':''} ${sel?'selected':''}" data-calendar-date="${k}"><span>${d.getDate()}</span><span class="day-markers">${marks.join('')}</span></button>`);
   }
   $('#calendarGrid').innerHTML=cells.join('');
@@ -386,8 +423,8 @@ function renderSelectedDay(){
   const diff=weight!==null&&hasNum(plan)?weight-plan:null;let status={type:'neutral',text:'Keine Gewichtsdaten'};
   if(diff!==null)status=Math.abs(diff)<=.15?{type:'good',text:'Im Plan'}:diff<0?{type:'good',text:`${fmt(Math.abs(diff),1)} kg vor Plan`}:{type:'bad',text:`${fmt(diff,1)} kg hinter Plan`};
   $('#selectedDayTitle').textContent=formatDate(k,{weekday:'long',day:'2-digit',month:'long'});
-  const gym=gymDay(k),gs=gymStatus(k);
-  $('#selectedDayCard').innerHTML=`<div class="selected-day-top"><strong>${formatDate(k,{day:'2-digit',month:'2-digit',year:'numeric'})}</strong><span class="status-pill ${status.type}">${status.text}</span></div><div class="selected-values"><div><span>Soll</span><strong>${hasNum(plan)?fmt(plan,1)+' kg':'–'}</strong></div><div><span>Kalorienmodell</span><strong>${hasNum(model)?fmt(model,1)+' kg':'–'}</strong></div><div><span>Waage</span><strong>${weight!==null?fmt(weight,1)+' kg':'–'}</strong></div></div><div class="history-meta"><span class="status-text ${calorieStatus(k)}">${hasNum(d.calories)?fmt(d.calories)+' kcal':'Keine Kalorien'}</span>${gym?`<span class="status-text ${gs==='open'?'neutral':gs}">${gs==='good'?'Training erledigt':gs==='bad'?'Training verpasst':'Training offen'}</span>`:''}</div><div class="selected-actions"><button class="edit" type="button" data-edit-selected>Tag bearbeiten</button>${gym?`<button class="training" type="button" data-toggle-training>${d.gymDone===true?'Als offen markieren':'Training erledigt'}</button><button class="edit" type="button" data-edit-training>Termin</button>`:''}</div>`;
+  const gym=gymDay(k)||!!d.workoutId,gs=gymStatus(k);
+  $('#selectedDayCard').innerHTML=`<div class="selected-day-top"><strong>${formatDate(k,{day:'2-digit',month:'2-digit',year:'numeric'})}</strong><span class="status-pill ${status.type}">${status.text}</span></div><div class="selected-values"><div><span>Soll</span><strong>${hasNum(plan)?fmt(plan,1)+' kg':'–'}</strong></div><div><span>Kalorienmodell</span><strong>${hasNum(model)?fmt(model,1)+' kg':'–'}</strong></div><div><span>Waage</span><strong>${weight!==null?fmt(weight,1)+' kg':'–'}</strong></div></div><div class="history-meta"><span class="status-text ${calorieStatus(k)}">${hasNum(d.calories)?fmt(d.calories)+' kcal':'Keine Kalorien'}</span>${gym?`<span class="status-text ${gs==='open'?'neutral':gs}">${gs==='good'?'Training erledigt':gs==='bad'?'Training verpasst':'Training offen'}</span>`:''}</div><div class="selected-actions"><button class="edit" type="button" data-edit-selected>Tag bearbeiten</button>${gym&&!d.workoutId?`<button class="training" type="button" data-toggle-training>${d.gymDone===true?'Als offen markieren':'Training erledigt'}</button>${gymOccurrences(k).length?`<button class="edit" type="button" data-edit-training>Termin</button>`:""}`:''}</div>`;
   $('[data-edit-selected]')?.addEventListener('click',()=>openDayEditor(k));
   $('[data-toggle-training]')?.addEventListener('click',()=>{db.days[k]={...d,date:k,gymDone:d.gymDone===true?false:true};save();renderAll();toast('Training aktualisiert')});
   $('[data-edit-training]')?.addEventListener('click',()=>{const s=gymOccurrences(k)[0];if(!s)return;if(s.type==='once')openSeriesEditor(s.id);else openRecurringEditor(s,k)});
@@ -489,6 +526,7 @@ function renderPlan(){
   const def=planBaseDeficit(),weekly=def*7/7700,orig=originalGoalDate(),cur=currentGoalDate(),shift=goalShiftDays();
   $('#planSummary').innerHTML=`<div class="summary-box"><span>Basisdefizit</span><strong>${fmt(def)} kcal / Tag</strong></div><div class="summary-box"><span>Tempo ohne Gym</span><strong>≈ ${fmt(weekly,2)} kg / Woche</strong></div><div class="summary-box"><span>Geplanter Zieltermin</span><strong>${orig?formatDate(orig):'–'}</strong></div><div class="summary-box ${shift!==null&&shift>0?'bad':'good'}"><span>Zieltermin nach Waage</span><strong>${cur?formatDate(cur):'–'}</strong></div>`;
   renderSeriesList('#trainingUpcoming');
+  if(!cutDirty)$('#cutSlider').value=clamp(+p.plannedCalories||2300,1500,3500);renderCutPreview();
 }
 function savePlan(e){
   e.preventDefault();const p={startDate:$('#startDate').value,startWeight:num('#startWeight'),goalWeight:num('#goalWeight'),maintenanceCalories:num('#maintenanceCalories'),plannedCalories:num('#plannedCalories')};
@@ -526,8 +564,8 @@ function openRecurringEditor(s,k){
   $('#deleteFuture').addEventListener('click',()=>{s.end=prevDay(k);save();closeModal();renderAll();toast('Zukünftige Termine gelöscht')});
 }
 function openDayEditor(k){
-  const d=actual(k),gym=gymDay(k);openModal(`<h2>${formatDate(k,{weekday:'long',day:'2-digit',month:'long'})}</h2><p>Trage Gewicht und Kalorien ein. Ein Kalorientag bleibt bis einschließlich +100 kcal im grünen Bereich.</p><form id="dayEditor" class="modal-form"><label>Gewicht (kg)<input id="edWeight" type="number" step="0.1" value="${validWeight(d.weight)?d.weight:''}"></label><label>Kalorien<input id="edCalories" type="number" value="${hasNum(d.calories)?d.calories:''}"></label>${gym?`<label class="toggle-row"><span>Training erledigt</span><input id="edGym" type="checkbox" ${d.gymDone===true?'checked':''}><i></i></label>`:''}<button class="primary-button" type="submit">Speichern</button><button id="deleteDay" class="danger-button" type="button">Tag löschen</button></form>`);
-  $('#dayEditor').addEventListener('submit',e=>{e.preventDefault();const w=+$('#edWeight').value;if($('#edWeight').value&&w<=0)return toast('Gewicht muss größer als 0 sein');db.days[k]={...d,date:k,weight:$('#edWeight').value?+$('#edWeight').value:null,calories:$('#edCalories').value?+$('#edCalories').value:null,gymDone:gym?$('#edGym').checked:null};save();closeModal();renderAll();toast('Tag gespeichert')});
+  const d=actual(k),gym=gymDay(k)||!!d.workoutId;openModal(`<h2>${formatDate(k,{weekday:'long',day:'2-digit',month:'long'})}</h2><p>Trage Gewicht und Kalorien ein. Ein Kalorientag bleibt bis einschließlich +100 kcal im grünen Bereich.</p><form id="dayEditor" class="modal-form"><label>Gewicht (kg)<input id="edWeight" type="number" step="0.1" value="${validWeight(d.weight)?d.weight:''}"></label><label>Kalorien<input id="edCalories" type="number" value="${hasNum(d.calories)?d.calories:''}"></label>${gym?`<label class="toggle-row"><span>Training erledigt</span><input id="edGym" type="checkbox" ${d.gymDone===true?'checked':''}><i></i></label>`:''}<button class="primary-button" type="submit">Speichern</button><button id="deleteDay" class="danger-button" type="button">Tag löschen</button></form>`);
+  $('#dayEditor').addEventListener('submit',e=>{e.preventDefault();const w=+$('#edWeight').value;if($('#edWeight').value&&w<=0)return toast('Gewicht muss größer als 0 sein');db.days[k]={...d,date:k,weight:$('#edWeight').value?+$('#edWeight').value:null,calories:$('#edCalories').value?+$('#edCalories').value:null,gymDone:d.workoutId?true:(gym?$('#edGym').checked:null)};save();closeModal();renderAll();toast('Tag gespeichert')});
   $('#deleteDay').addEventListener('click',()=>{delete db.days[k];save();closeModal();renderAll();toast('Tag gelöscht')});
 }
 function escapeHtml(s){return String(s).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
